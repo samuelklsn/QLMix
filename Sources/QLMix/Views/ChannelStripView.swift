@@ -41,6 +41,8 @@ struct ChannelStripView: View {
             }
             .disabled(!enabled)
 
+            eqButton(enabled: enabled)
+
             Text(level.displayString)
                 .font(.system(size: 12, weight: .medium).monospacedDigit())
                 .foregroundStyle(level.isNegativeInfinity ? .secondary : .primary)
@@ -96,6 +98,36 @@ struct ChannelStripView: View {
                 .stroke(channel.cue ? Color.yellow.opacity(0.7) : Color.white.opacity(0.06), lineWidth: 1)
         )
         .opacity(isOn ? 1 : 0.82)
+    }
+
+    @ViewBuilder
+    private func eqButton(enabled: Bool) -> some View {
+        if channel.id.kind.hasEQ {
+            let selected = store.eqChannel == channel.id
+            Button {
+                store.eqChannel = selected ? nil : channel.id
+            } label: {
+                EQThumbnail(eq: channel.eq, synced: channel.eqSynced)
+                    .padding(.horizontal, 2)
+                    .frame(maxWidth: .infinity, minHeight: 26, maxHeight: 26)
+                    .background(RoundedRectangle(cornerRadius: 4).fill(Color.black.opacity(0.55)))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(selected ? Color.cyan : Color.white.opacity(0.08), lineWidth: selected ? 1.5 : 1)
+                    )
+                    .overlay(alignment: .topLeading) {
+                        Text("EQ")
+                            .font(.system(size: 7, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.45))
+                            .padding(2)
+                    }
+            }
+            .buttonStyle(.plain)
+            .help("EQ bearbeiten")
+            .disabled(!enabled)
+        } else {
+            Color.clear.frame(height: 26)
+        }
     }
 
     private var hasMeter: Bool {

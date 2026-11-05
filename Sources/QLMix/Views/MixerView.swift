@@ -31,6 +31,13 @@ struct MixerView: View {
             .overlay {
                 if !store.isConnected { DisconnectedOverlay() }
             }
+            .inspector(isPresented: Binding(
+                get: { store.eqChannel != nil },
+                set: { if !$0 { store.eqChannel = nil } }
+            )) {
+                EQInspectorView()
+                    .inspectorColumnWidth(min: 460, ideal: 540, max: 760)
+            }
         }
         .background(Color(white: 0.08))
     }

@@ -11,6 +11,8 @@ final class SimulatedConsole: @unchecked Sendable {
         var model: ConsoleModel = .ql5
         var animate = false
         var verbose = false
+        /// Simulate a console without EQ over RCP.
+        var noEQ = false
     }
 
     private final class Client: @unchecked Sendable {
@@ -104,6 +106,22 @@ final class SimulatedConsole: @unchecked Sendable {
                 case .dca: .yellow
                 }
                 set(.color, .string(color.rawValue))
+                if id.kind.hasEQ, !options.noEQ {
+                    let schema = EQSchema.peq
+                    var eq = EQSettings()
+                    if id.kind == .input, id.index < 16 {
+                        eq.hpfOn = true
+                        eq.hpfFrequency = [100, 120, 200, 80, 80, 150, 150, 40][id.index % 8]
+                        eq.bands[1].gain = [-3, 2, -4.5, 0][id.index % 4]
+                        eq.bands[2].gain = [2.5, -2, 3, 1.5][id.index % 4]
+                        eq.bands[3].gain = id.index % 3 == 0 ? 3 : 0
+                        eq.highShelf = id.index % 2 == 0
+                    }
+                    for p in EQKey.Parameter.all {
+                        let k = EQKey(id, p)
+                        values[key(k.address(schema: schema), x, k.wireTargets()[0].y)] = .int(eq.rawValue(for: p, schema: schema))
+                    }
+                }
                 if id.kind.canSendToMix {
                     for mix in 0..<options.model.count(.mix) {
                         let lv = ParameterKey.send(id, mix: mix, .level).address
@@ -207,6 +225,13 @@ final class SimulatedConsole: @unchecked Sendable {
             case "version": send("OK devinfo version \"V5.81 (Simulator)\"", to: client)
             default: send("ERROR devinfo UnknownAddress", to: client)
             }
+
+        case "prminfo":
+            let addresses = Array(Set(values.keys.map { String($0.split(separator: " ")[0]) })).sorted()
+            guard t.count >= 2, let i = Int(t[1]), addresses.indices.contains(i) else {
+                return send("ERROR prminfo InvalidArgument", to: client)
+            }
+            send("OK prminfo \(i) \"\(addresses[i])\" 0 0 0 0 0 \"\" integer any rw 1", to: client)
 
         case "devstatus":
             send("OK devstatus runmode \"normal\"", to: client)

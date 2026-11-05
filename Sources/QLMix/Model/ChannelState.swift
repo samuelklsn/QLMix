@@ -20,6 +20,10 @@ final class ChannelState: Identifiable {
     var sendLevels: [Int: FaderLevel] = [:]
     var sendOn: [Int: Bool] = [:]
 
+    /// Channel EQ / HPF (only meaningful when `eqSynced`).
+    var eq = EQSettings()
+    var eqSynced = false
+
     /// Meter 0…1 (`nil` = no meter data available for this channel).
     var meter: Double?
     var meterPeak: Double = 0

@@ -54,6 +54,13 @@ enum Layer: Hashable, Identifiable {
     }
 }
 
+enum EQStatus: Equatable {
+    case unknown
+    case probing
+    case available(EQSchema)
+    case unavailable
+}
+
 enum MeterStatus: Equatable {
     case disabled
     case requested
@@ -79,7 +86,15 @@ final class MixerStore {
     private(set) var isSyncing = false
     private(set) var lastError: String?
 
-    var layer: Layer = .inputs(page: 0)
+    var layer: Layer = .inputs(page: 0) {
+        didSet { if layer != oldValue { syncVisibleEQ() } }
+    }
+    private(set) var eqStatus: EQStatus = .unknown
+    /// Channel shown in the EQ inspector.
+    var eqChannel: ChannelID? {
+        didSet { if let id = eqChannel { syncEQ([id]) } }
+    }
+    private(set) var dumpProgress: DumpProgress?
     var faderMode: FaderMode = .main {
         didSet { if faderMode != oldValue { syncSendsIfNeeded() } }
     }
@@ -92,13 +107,22 @@ final class MixerStore {
     @ObservationIgnored private var outbox: AsyncStream<OutboxItem>.Continuation?
     @ObservationIgnored private var syncGeneration = 0
 
+    /// Identity of an outgoing value for coalescing.
+    private enum OutKey: Hashable {
+        case param(ParameterKey)
+        case eq(EQKey)
+    }
+
     /// Coalesced outgoing `set`s (latest value wins).
-    @ObservationIgnored private var pending: [ParameterKey: RCPValue] = [:]
-    @ObservationIgnored private var pendingOrder: [ParameterKey] = []
+    @ObservationIgnored private var pending: [OutKey: [RCPCommand]] = [:]
+    @ObservationIgnored private var pendingOrder: [OutKey] = []
     @ObservationIgnored private var flushTask: Task<Void, Never>?
 
     /// Parameters currently held by the user – incoming values are ignored to avoid jitter.
-    @ObservationIgnored private var touching: Set<ParameterKey> = []
+    @ObservationIgnored private var touching: Set<OutKey> = []
+    @ObservationIgnored private var eqRequested: Set<ChannelID> = []
+    @ObservationIgnored private var dumpLines: [String] = []
+    @ObservationIgnored private var lastDumpLine = ContinuousClock.now
     @ObservationIgnored private var syncedSendMixes: Set<Int> = []
     @ObservationIgnored private var awaitingModel = false
     @ObservationIgnored private var lastMeterUpdate = ContinuousClock.now
@@ -209,6 +233,11 @@ final class MixerStore {
             log.append(.outgoing, line)
 
         case let .received(message, raw):
+            if dumpProgress?.isRunning == true, Self.isDumpLine(raw) {
+                dumpLines.append(raw)
+                lastDumpLine = .now
+                dumpProgress = .running(received: dumpLines.count)
+            }
             if case .meter = message {
                 if settings.logMeters { log.append(.incoming, raw) }
             } else if !(settings.hideKeepAlive && raw.hasPrefix("OK devstatus runmode")) {
@@ -224,9 +253,20 @@ final class MixerStore {
     private func handle(_ message: RCPMessage) {
         switch message {
         case let .parameter(status, _, report):
-            guard status != .error,
-                  let key = ParameterKey.decode(address: report.address, x: report.x, y: report.y)
-            else { return }
+            guard status != .error else { return }
+            if eqStatus == .probing, report.x == 0,
+               let schema = EQSchema.candidates.first(where: { $0.probeAddress() == report.address }) {
+                eqStatus = .available(schema)
+                log.append(.info, "EQ verfügbar (Adressschema \(schema.name))")
+                syncVisibleEQ()
+                if let id = eqChannel { syncEQ([id]) }
+            }
+            if case .available(let schema) = eqStatus,
+               let key = EQKey.decode(address: report.address, x: report.x, y: report.y, schema: schema) {
+                applyEQ(key, report.value, schema: schema)
+                return
+            }
+            guard let key = ParameterKey.decode(address: report.address, x: report.x, y: report.y) else { return }
             apply(key, report.value)
 
         case let .meter(address, values):
@@ -277,7 +317,7 @@ final class MixerStore {
     }
 
     private func apply(_ key: ParameterKey, _ value: RCPValue) {
-        guard !touching.contains(key), pending[key] == nil else { return }
+        guard !touching.contains(.param(key)), pending[.param(key)] == nil else { return }
         guard let channel = channels[key.channel] else { return }
         switch key {
         case .channel(_, .level):
@@ -312,9 +352,13 @@ final class MixerStore {
             self.fullSync()
         }
         startMeters()
+        probeEQ()
     }
 
     private func didDisconnect() {
+        eqStatus = .unknown
+        eqRequested.removeAll()
+        for channel in channels.values { channel.eqSynced = false }
         syncGeneration += 1
         isSyncing = false
         touching.removeAll()
@@ -346,6 +390,12 @@ final class MixerStore {
             syncedSendMixes.insert(mix)
         }
         enqueueSync(commands, generation: generation)
+
+        // EQ is fetched lazily (visible strips + inspector) – invalidate what we have.
+        eqRequested.removeAll()
+        for channel in channels.values { channel.eqSynced = false }
+        syncVisibleEQ()
+        if let id = eqChannel { syncEQ([id]) }
     }
 
     private func sendSyncCommands(mix: Int) -> [RCPCommand] {
@@ -509,16 +559,19 @@ final class MixerStore {
     }
 
     func beginTouch(_ channel: ChannelState) {
-        touching.insert(levelKey(for: channel.id))
+        touching.insert(.param(levelKey(for: channel.id)))
     }
 
     func endTouch(_ channel: ChannelState) {
+        releaseTouch([.param(levelKey(for: channel.id))])
+    }
+
+    private func releaseTouch(_ keys: [OutKey]) {
         flush()
-        let key = levelKey(for: channel.id)
-        // Keep ignoring echoes briefly so in-flight responses don't snap the fader back.
+        // Keep ignoring echoes briefly so in-flight responses don't snap the control back.
         Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(250))
-            self?.touching.remove(key)
+            for key in keys { self?.touching.remove(key) }
         }
     }
 
@@ -530,9 +583,13 @@ final class MixerStore {
     // MARK: Outgoing coalescing
 
     private func enqueue(_ key: ParameterKey, _ value: RCPValue, immediate: Bool = false) {
+        enqueue(.param(key), RCPCommand.set(key, value), immediate: immediate)
+    }
+
+    private func enqueue(_ key: OutKey, _ commands: [RCPCommand], immediate: Bool = false) {
         guard isConnected else { return }
         if pending[key] == nil { pendingOrder.append(key) }
-        pending[key] = value
+        pending[key] = commands
         if immediate {
             flush()
         } else if flushTask == nil {
@@ -549,10 +606,177 @@ final class MixerStore {
         flushTask?.cancel()
         flushTask = nil
         guard !pendingOrder.isEmpty else { return }
-        let commands = pendingOrder.flatMap { key in RCPCommand.set(key, pending[key]!) }
+        let commands = pendingOrder.flatMap { pending[$0] ?? [] }
         pending.removeAll()
         pendingOrder.removeAll()
         send(commands)
+    }
+}
+
+// MARK: - EQ
+
+extension MixerStore {
+    var eqSchema: EQSchema? {
+        if case .available(let schema) = eqStatus { return schema }
+        return nil
+    }
+
+    /// Asks for the EQ "On" parameter in every candidate schema; the first OK wins.
+    fileprivate func probeEQ() {
+        eqStatus = .probing
+        send(EQSchema.candidates.map { .get(address: $0.probeAddress(), x: 0, y: 0) })
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard let self, self.eqStatus == .probing else { return }
+            self.eqStatus = .unavailable
+            self.log.append(.info, "EQ-Parameter werden vom Pult über RCP nicht beantwortet")
+        }
+    }
+
+    func retryEQProbe() {
+        guard isConnected else { return }
+        probeEQ()
+    }
+
+    /// Requests all EQ parameters for channels that don't have them yet.
+    func syncEQ(_ ids: [ChannelID]) {
+        guard isConnected, let schema = eqSchema else { return }
+        let targets = ids.filter { $0.kind.hasEQ && !eqRequested.contains($0) }
+        guard !targets.isEmpty else { return }
+        eqRequested.formUnion(targets)
+        let commands = targets.flatMap { id in
+            EQKey.Parameter.all.map { RCPCommand.get(EQKey(id, $0), schema: schema) }
+        }
+        for chunk in commands.chunked(into: 34) {
+            outbox?.yield(.commands(chunk))
+            outbox?.yield(.pause(.milliseconds(10)))
+        }
+    }
+
+    func syncVisibleEQ() {
+        var ids = layer.channels(for: model) + [ChannelID(.stereo, 0), ChannelID(.mono, 0)]
+        if case .mix(let mix) = faderMode { ids.append(ChannelID(.mix, mix)) }
+        syncEQ(ids)
+    }
+
+    fileprivate func applyEQ(_ key: EQKey, _ value: RCPValue, schema: EQSchema) {
+        guard !touching.contains(.eq(key)), pending[.eq(key)] == nil,
+              let channel = channels[key.channel], let raw = value.intValue
+        else { return }
+        channel.eq.apply(key.parameter, raw: raw, schema: schema)
+        if !channel.eqSynced { channel.eqSynced = true }
+    }
+
+    /// Changes EQ values locally and sends the given parameters.
+    func updateEQ(
+        _ channel: ChannelState,
+        _ parameters: [EQKey.Parameter],
+        immediate: Bool = false,
+        _ mutate: (inout EQSettings) -> Void
+    ) {
+        guard let schema = eqSchema else { return }
+        var eq = channel.eq
+        mutate(&eq)
+        eq.clamp()
+        guard eq != channel.eq else { return }
+        let old = channel.eq
+        channel.eq = eq
+        for parameter in parameters where eq.rawValue(for: parameter, schema: schema) != old.rawValue(for: parameter, schema: schema) {
+            let key = EQKey(channel.id, parameter)
+            enqueue(.eq(key), RCPCommand.set(key, eq.rawValue(for: parameter, schema: schema), schema: schema), immediate: immediate)
+        }
+    }
+
+    func beginEQTouch(_ channel: ChannelState, _ parameters: [EQKey.Parameter]) {
+        for p in parameters { touching.insert(.eq(EQKey(channel.id, p))) }
+    }
+
+    func endEQTouch(_ channel: ChannelState, _ parameters: [EQKey.Parameter]) {
+        releaseTouch(parameters.map { .eq(EQKey(channel.id, $0)) })
+    }
+
+    /// Resets all band gains to 0 dB.
+    func flattenEQ(_ channel: ChannelState) {
+        updateEQ(channel, (0..<eqBandCount).map { .bandGain($0) }, immediate: true) { eq in
+            for i in eq.bands.indices { eq.bands[i].gain = 0 }
+        }
+    }
+
+    /// Channels that have an EQ, in console order (for prev/next in the inspector).
+    var eqChannels: [ChannelID] {
+        model.allChannels.filter { $0.kind.hasEQ }
+    }
+}
+
+// MARK: - Parameter list dump
+
+enum DumpProgress: Equatable {
+    case running(received: Int)
+    case finished(URL, lines: Int)
+    case failed(String)
+
+    var isRunning: Bool {
+        if case .running = self { return true }
+        return false
+    }
+}
+
+extension MixerStore {
+    fileprivate static func isDumpLine(_ raw: String) -> Bool {
+        let tokens = raw.split(separator: " ", maxSplits: 2)
+        guard tokens.count >= 2 else { return false }
+        // Only real answers – "ERROR prminfo …" just marks unused indices.
+        return tokens[0] != "ERROR" && ["prminfo", "scninfo", "mtrinfo"].contains(tokens[1])
+    }
+
+    /// Asks the console for its complete RCP parameter list (`prminfo n`, `scninfo n`, `mtrinfo n`)
+    /// and writes the answers to ~/Documents/QLMix/.
+    func dumpParameterList() {
+        guard isConnected, dumpProgress?.isRunning != true else { return }
+        dumpLines = []
+        lastDumpLine = .now
+        dumpProgress = .running(received: 0)
+        let commands: [RCPCommand] =
+            (0..<1000).map { .raw("prminfo \($0)") }
+            + (1000..<1100).map { .raw("scninfo \($0)") }
+            + (2000..<2400).map { .raw("mtrinfo \($0)") }
+        for chunk in commands.chunked(into: 20) {
+            outbox?.yield(.commands(chunk))
+            outbox?.yield(.pause(.milliseconds(25)))
+        }
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            while let self, self.dumpProgress?.isRunning == true {
+                if ContinuousClock.now - self.lastDumpLine > .seconds(3) || !self.isConnected {
+                    self.finishDump()
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+        }
+    }
+
+    private func finishDump() {
+        let header = [
+            "# QLMix RCP-Parameterliste",
+            "# Pult: \(productName ?? "?")  Firmware: \(firmwareVersion ?? "?")",
+            "# Datum: \(Date.now.formatted(date: .numeric, time: .standard))",
+            "",
+        ]
+        let text = (header + dumpLines).joined(separator: "\n") + "\n"
+        do {
+            let dir = URL.documentsDirectory.appending(path: "QLMix", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+            let stamp = formatter.string(from: .now)
+            let url = dir.appending(path: "prminfo-\(productName ?? "console")-\(stamp).txt")
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            dumpProgress = .finished(url, lines: dumpLines.count)
+            log.append(.info, "Parameterliste gespeichert: \(url.path) (\(dumpLines.count) Zeilen)")
+        } catch {
+            dumpProgress = .failed(error.localizedDescription)
+        }
     }
 }
 

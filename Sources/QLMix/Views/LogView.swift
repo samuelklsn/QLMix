@@ -39,6 +39,16 @@ struct LogView: View {
             .toggleStyle(.checkbox)
             .padding(8)
 
+            HStack(spacing: 10) {
+                Button("Parameterliste auslesen") { store.dumpParameterList() }
+                    .disabled(!store.isConnected || store.dumpProgress?.isRunning == true)
+                    .help("Fragt alle RCP-Parameter des Pults ab (prminfo) und speichert sie als Textdatei")
+                dumpStatus
+                Spacer()
+            }
+            .toggleStyle(.checkbox)
+            .padding(8)
+
             Divider()
 
             ScrollViewReader { proxy in
@@ -94,6 +104,23 @@ struct LogView: View {
             .padding(8)
         }
         .frame(minWidth: 720, minHeight: 380)
+    }
+
+    @ViewBuilder
+    private var dumpStatus: some View {
+        switch store.dumpProgress {
+        case .running(let n)?:
+            ProgressView().controlSize(.small)
+            Text("Lese aus … \(n) Antworten").font(.caption).foregroundStyle(.secondary)
+        case let .finished(url, lines)?:
+            Text("\(lines) Zeilen gespeichert").font(.caption).foregroundStyle(.secondary)
+            Button("Im Finder zeigen") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                .controlSize(.small)
+        case .failed(let message)?:
+            Text("Fehler: \(message)").font(.caption).foregroundStyle(.red)
+        case nil:
+            EmptyView()
+        }
     }
 
     private static let examples = [

@@ -39,7 +39,7 @@ Sources/
                       Keepalive (devstatus runmode), Totverbindungs-Erkennung
   QLMix/              SwiftUI-App (@Observable MixerStore, Strips, Fader, Meter, Log, Settings)
   QLSimulator/        Fake-Pult zum Testen ohne Hardware
-Tests/                26 Swift-Testing-Tests für das Protokoll-Modul
+Tests/                31 Swift-Testing-Tests (Protokoll, EQ-Adressen, EQ-Kurve)
 scripts/make-app.sh   baut build/QLMix.app (Release, ad-hoc signiert)
 ```
 
@@ -76,9 +76,33 @@ Dann in der App `127.0.0.1` eintragen und verbinden.
 * **Szenen**: Nummer eingeben → Recall (mit Bestätigung)
 * **Log-Fenster**: Live-Traffic, Filter, und eine Eingabezeile für beliebige RCP-Befehle
 
+### EQ
+
+* Klick auf die kleine EQ-Kurve im Kanalzug (oder ⌘E) öffnet rechts den EQ-Editor.
+* 4 Bänder (LOW / LO-MID / HI-MID / HIGH), LOW und HIGH umschaltbar Bell ↔ Shelf, HPF, EQ ON, Flat.
+* Knoten in der Kurve ziehen = Frequenz + Gain, Scrollrad = Q (⌥ fein), Doppelklick = 0 dB, ‹ › = Kanal wechseln.
+
+**Wichtig:** Yamaha dokumentiert die EQ-Adressen für CL/QL nicht, und die bekannte Parameterliste eines CL/QL
+enthält keinen EQ. Die App verwendet deshalb das Adressschema der neueren Yamaha-Pulte (RIVAGE/DM7):
+
+```
+MIXER:Current/InCh/PEQ/On                 MIXER:Current/InCh/PEQ/Band/Freq  ch band  (Hz × 10)
+MIXER:Current/InCh/PEQ/LowShelving/On     MIXER:Current/InCh/PEQ/Band/Gain  ch band  (dB × 100)
+MIXER:Current/InCh/PEQ/HighShelving/On    MIXER:Current/InCh/PEQ/Band/Q     ch band  (Q × 1000)
+MIXER:Current/InCh/HPF/On                 MIXER:Current/InCh/HPF/Freq       ch 0     (Hz × 10)
+```
+
+Beim Verbinden prüft die App, ob das Pult darauf antwortet (Varianten `PEQ` und `EQ`). Falls nicht, zeigt der
+EQ-Editor das an. Dann im EQ-Editor oder Log-Fenster **„Parameterliste auslesen“** klicken. Die App fragt damit alle
+Parameter des Pults ab (`prminfo 0…999`, `scninfo`, `mtrinfo`) und speichert sie unter `~/Documents/QLMix/`.
+Mit dieser Datei lässt sich das Mapping exakt anpassen (`Sources/YamahaQLProtocol/EQ.swift`, `EQSchema`).
+
+Simulator ohne EQ testen: `swift run QLSimulator --no-eq`
+
 ## Bekannte Grenzen / ungeprüft
 
 * Gegen echte Hardware noch nicht getestet – entwickelt gegen den Simulator und die
   dokumentierte Parameterliste (Companion `CLQL Parameters-1.txt`).
 * RCP liefert auf CL/QL **nur Mix- und Matrix-Meter**, keine Eingangs-Meter.
+* EQ-Adressen sind für CL/QL nicht bestätigt (siehe Abschnitt EQ).
 * Die Fader-Kurve (Position ↔ dB) ist an Yamaha angelehnt, aber nicht 1:1 identisch.

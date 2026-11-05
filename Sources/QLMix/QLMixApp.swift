@@ -36,6 +36,10 @@ struct QLMixApp: App {
                     Button(layer.title(for: store.model)) { store.layer = layer }
                         .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
                 }
+                Button(store.eqChannel == nil ? "EQ-Editor öffnen" : "EQ-Editor schließen") {
+                    store.eqChannel = store.eqChannel == nil ? store.layer.channels(for: store.model).first : nil
+                }
+                .keyboardShortcut("e", modifiers: .command)
                 Divider()
                 Button("Fader: Main") { store.faderMode = .main }
                     .keyboardShortcut("0", modifiers: [.command, .option])
