@@ -13,6 +13,8 @@ while let arg = args.popFirst() {
         if let v = args.popFirst() { options.model = ConsoleModel.from(productName: v) }
     case "--animate":
         options.animate = true
+    case "--firmware":
+        if let v = args.popFirst() { options.firmware = v }
     case "--no-eq":
         options.noEQ = true
     case "--verbose", "-v":
@@ -23,6 +25,7 @@ while let arg = args.popFirst() {
           --port <n>        TCP-Port (Standard 49280)
           --model <name>    QL5, QL1, CL5, CL3, CL1 (Standard QL5)
           --animate         bewegt zufällig Fader (simuliert zweiten Bediener)
+          --firmware <text> Antwort auf "devinfo version"
           --no-eq           EQ-Adressen nicht beantworten (wie ein Pult ohne EQ über RCP)
           --verbose         protokolliert jede Zeile
         """)

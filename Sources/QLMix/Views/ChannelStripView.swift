@@ -197,7 +197,7 @@ struct LabelEditor: View {
             }
         }
         .padding(14)
-        .frame(width: 210)
+        .frame(width: 250)
         .onAppear { name = channel.name }
     }
 

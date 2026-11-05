@@ -13,6 +13,8 @@ final class SimulatedConsole: @unchecked Sendable {
         var verbose = false
         /// Simulate a console without EQ over RCP.
         var noEQ = false
+        /// Reported by `devinfo version`.
+        var firmware = "V5.81 (Simulator)"
     }
 
     private final class Client: @unchecked Sendable {
@@ -222,7 +224,7 @@ final class SimulatedConsole: @unchecked Sendable {
         case "devinfo":
             switch t.dropFirst().first {
             case "productname": send("OK devinfo productname \"\(options.model.name)\"", to: client)
-            case "version": send("OK devinfo version \"V5.81 (Simulator)\"", to: client)
+            case "version": send("OK devinfo version \"\(options.firmware)\"", to: client)
             default: send("ERROR devinfo UnknownAddress", to: client)
             }
 
