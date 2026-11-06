@@ -85,12 +85,24 @@ foreach ($p in @(Get-NetConnectionProfile)) { Info ("Netzwerkprofil '" + $p.Name
 
 # ---------------------------------------------------------------- Firewall
 Head "Firewall"
-foreach ($fp in @(Get-NetFirewallProfile)) { Info ("Windows-Firewall " + $fp.Name + ": aktiv=" + $fp.Enabled + ", eingehend standardmäßig " + $fp.DefaultInboundAction) }
+$shieldsUp = @()
+foreach ($fp in @(Get-NetFirewallProfile)) {
+  Info ("Windows-Firewall " + $fp.Name + ": aktiv=" + $fp.Enabled + ", eingehend standardmäßig " + $fp.DefaultInboundAction + ", Freigaben erlaubt=" + $fp.AllowInboundRules)
+  if ($fp.Enabled -eq "True" -and $fp.AllowInboundRules -eq "False") { $shieldsUp += $fp.Name }
+}
+if ($shieldsUp.Count -gt 0) {
+  Bad ("Im Profil " + ($shieldsUp -join ", ") + " ist 'Alle eingehenden Verbindungen blockieren' aktiv - dann wirken keine Freigaben.")
+}
+$publicNets = @(Get-NetConnectionProfile | Where-Object { $_.NetworkCategory -eq "Public" })
+if ($publicNets.Count -gt 0) { Hint ("Netzwerk ist als 'Öffentlich' eingestuft: " + (($publicNets | ForEach-Object { $_.Name }) -join ", ") + " - für ein Kirchen-/Heimnetz besser 'Privat'.") }
 $rule = Get-NetFirewallRule -DisplayName "QLMix Web" -ErrorAction SilentlyContinue
+$narrowRule = $false
 if ($rule) {
   $pf = $rule | Get-NetFirewallPortFilter
   $af = $rule | Get-NetFirewallAddressFilter
   Ok ("Regel 'QLMix Web': aktiv=" + $rule.Enabled + ", Port " + $pf.LocalPort + ", erlaubt von " + (($af.RemoteAddress) -join ", "))
+  $narrowRule = -not (@($af.RemoteAddress) -contains "192.168.0.0/16" -or @($af.RemoteAddress) -contains "192.168.0.0/255.255.0.0" -or @($af.RemoteAddress) -contains "Any")
+  if ($narrowRule) { Hint "Freigabe gilt nur für das eigene Subnetz - Handys in einem anderen WLAN-Bereich werden geblockt." }
 } else { Bad "Firewall-Regel 'QLMix Web' fehlt" }
 
 $blockRules = @()
@@ -133,6 +145,21 @@ $changed = $false
 if ($blockRules.Count -gt 0 -and (Ask "Sperr-Regeln für node.exe entfernen")) {
   $blockRules | Remove-NetFirewallRule
   Ok "Sperr-Regeln entfernt"
+  $changed = $true
+}
+if ($shieldsUp.Count -gt 0 -and (Ask "'Alle eingehenden Verbindungen blockieren' ausschalten (nur diese Option, Firewall bleibt an)")) {
+  Set-NetFirewallProfile -Name $shieldsUp -AllowInboundRules True
+  Ok "Freigaben sind wieder wirksam"
+  $changed = $true
+}
+if ($publicNets.Count -gt 0 -and (Ask "Netzwerk als 'Privat' einstufen")) {
+  $publicNets | ForEach-Object { Set-NetConnectionProfile -InterfaceIndex $_.InterfaceIndex -NetworkCategory Private }
+  Ok "Netzwerk ist jetzt 'Privat'"
+  $changed = $true
+}
+if ($rule -and $narrowRule -and (Ask "Freigabe auf alle privaten Netzbereiche (192.168.x.x, 10.x.x.x, 172.16-31.x.x) erweitern")) {
+  $rule | Set-NetFirewallRule -RemoteAddress @("LocalSubnet", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
+  Ok "Freigabe erweitert"
   $changed = $true
 }
 if (-not $rule -or ($rule -and $rule.Enabled -ne "True")) {
