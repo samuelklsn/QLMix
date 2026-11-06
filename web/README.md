@@ -63,6 +63,7 @@ auch ohne Anmeldung, unsichtbar im Hintergrund und mit automatischem Neustart na
 | Aufgabe | So geht's |
 |---|---|
 | Läuft QLMix? | Am PC `http://localhost:8080` öffnen · Protokoll: `C:\QLMix\web\qlmix.log` |
+| Fehlersuche | `web\windows\diagnose.cmd` (Bericht: `qlmix-diagnose.txt` auf dem Desktop) |
 | Update einspielen | `web\windows\update.cmd` doppelklicken (holt neuen Stand, baut neu, startet neu) |
 | Pult-IP ändern | In QLMix unter ⚙︎ Einstellungen – oder `install.cmd` erneut ausführen |
 | Autostart entfernen | `web\windows\uninstall.cmd` |

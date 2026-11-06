@@ -67,6 +67,7 @@ Handy ins WLAN des Pult-Netzwerks, in **Safari/Chrome** die angezeigte Adresse �
 | Aufgabe | So geht's |
 |---|---|
 | Prüfen, ob QLMix läuft | Am PC `http://localhost:8080` öffnen · Protokoll: `C:\QLMix\web\qlmix.log` |
+| **Seite lässt sich nicht öffnen** | `C:\QLMix\web\windows\diagnose.cmd` doppelklicken – prüft alles, repariert auf Nachfrage und legt `qlmix-diagnose.txt` auf den Desktop |
 | Update einspielen | `C:\QLMix\web\windows\update.cmd` doppelklicken |
 | Pult-IP ändern | In QLMix unter ⚙︎ Einstellungen – oder `install.cmd` erneut ausführen |
 | Autostart entfernen | `C:\QLMix\web\windows\uninstall.cmd` doppelklicken |

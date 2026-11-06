@@ -119,7 +119,18 @@ Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Pr
 Write-Step "Öffne Port $Port in der Windows-Firewall (nur lokales Netzwerk)"
 Get-NetFirewallRule -DisplayName $RuleName -ErrorAction SilentlyContinue | Remove-NetFirewallRule
 New-NetFirewallRule -DisplayName $RuleName -Direction Inbound -Protocol TCP -LocalPort $Port -Action Allow `
-  -RemoteAddress LocalSubnet -Profile Any | Out-Null
+  -RemoteAddress @("LocalSubnet", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16") -Profile Any | Out-Null
+# Von Windows angelegte Sperr-Regeln für node.exe (z. B. nach "Abbrechen" im Firewall-Dialog) würden die Freigabe aushebeln.
+$nodeBlocks = @()
+foreach ($f in @(Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue | Where-Object { $_.Program -like "*node.exe" })) {
+  $r = $f | Get-NetFirewallRule
+  if ($r.Direction -eq "Inbound" -and $r.Action -eq "Block" -and $r.Enabled -eq "True") { $nodeBlocks += $r }
+}
+if ($nodeBlocks.Count -gt 0) {
+  Write-Host ("Achtung: " + $nodeBlocks.Count + " Firewall-Sperrregel(n) für node.exe gefunden - diese blockieren QLMix.") -ForegroundColor Yellow
+  $a = Read-Host "Sperrregeln für node.exe entfernen? (j/n)"
+  if ($a -match "^[jJyY]") { $nodeBlocks | Remove-NetFirewallRule; Write-Host "Entfernt." }
+}
 
 # ---------------------------------------------------------------- Starten
 Write-Step "Starte QLMix"
@@ -137,8 +148,10 @@ if ($ok) {
 }
 Write-Host ""
 Write-Host "Auf dem Handy/Tablet im selben Netzwerk öffnen:"
-Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" -and $_.PrefixOrigin -ne "WellKnown" } |
-  ForEach-Object { Write-Host ("   http://{0}:{1}" -f $_.IPAddress, $Port) -ForegroundColor White }
+foreach ($c in @(Get-NetIPConfiguration | Where-Object { $_.IPv4Address -and $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq "Up" })) {
+  Write-Host ("   http://{0}:{1}    ({2})" -f $c.IPv4Address[0].IPAddress, $Port, $c.InterfaceAlias) -ForegroundColor White
+}
+Write-Host "Klappt es nicht: windows\diagnose.cmd ausführen."
 Write-Host ""
 Write-Host "QLMix startet ab jetzt automatisch mit Windows."
 Write-Host "Wichtig: Energieoptionen so einstellen, dass der PC nicht in den Energiesparmodus geht."
