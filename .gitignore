@@ -6,3 +6,5 @@ build/
 /web/config.json
 /web/node_modules/
 /web/dist/
+/web/qlmix.log
+/web/windows/run-server.cmd

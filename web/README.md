@@ -39,6 +39,37 @@ sonst erreicht das iPhone den Server nicht.
 
 In Safari die Adresse öffnen → Teilen → **Zum Home-Bildschirm**. QLMix startet dann wie eine App im Vollbild.
 
+## Dauerbetrieb auf einem Windows-PC
+
+QLMix kann auf einem Windows-10/11-PC laufen, der sowieso an ist. Es startet dann automatisch mit Windows –
+auch ohne Anmeldung, unsichtbar im Hintergrund und mit automatischem Neustart nach einem Fehler.
+
+**Voraussetzung:** Der PC ist im selben Netzwerk wie das Pult (LAN-Kabel oder WLAN am selben Router).
+
+1. **Dateien holen.** Eingabeaufforderung öffnen und eingeben:
+   ```
+   winget install --id Git.Git -e
+   git clone https://github.com/samuelklsn/QLMix.git C:\QLMix
+   ```
+   (Alternativ [ZIP herunterladen](https://github.com/samuelklsn/QLMix/archive/refs/heads/main.zip) und nach `C:\QLMix` entpacken.
+   Ausführliche Schritt-für-Schritt-Anleitung: [README im Hauptordner](../README.md#installation-auf-einem-windows-pc-empfohlen).)
+2. **Installieren:** Im Explorer `C:\QLMix\web\windows\install.cmd` doppelklicken und die
+   Administrator-Abfrage bestätigen. Das Skript fragt nach der **IP-Adresse des Pults**, installiert bei Bedarf
+   Node.js, richtet den Autostart ein, gibt Port 8080 in der Firewall (nur fürs lokale Netz) frei und startet QLMix.
+   Am Ende zeigt es die Adresse für das Handy an, z. B. `http://192.168.1.50:8080`.
+3. **Energiesparmodus aus:** Einstellungen → System → Netzbetrieb und Energiesparen → Energiesparmodus **Nie**.
+4. **Feste Adresse (empfohlen):** Im Router dem PC immer dieselbe IP zuweisen, damit sich die Handy-Adresse nicht ändert.
+
+| Aufgabe | So geht's |
+|---|---|
+| Läuft QLMix? | Am PC `http://localhost:8080` öffnen · Protokoll: `C:\QLMix\web\qlmix.log` |
+| Update einspielen | `web\windows\update.cmd` doppelklicken (holt neuen Stand, baut neu, startet neu) |
+| Pult-IP ändern | In QLMix unter ⚙︎ Einstellungen – oder `install.cmd` erneut ausführen |
+| Autostart entfernen | `web\windows\uninstall.cmd` |
+| Dienst ansehen | Windows „Aufgabenplanung“ → Aufgabe **QLMix** |
+
+Läuft auf demselben PC der **QL Editor**, kommen sich beide bei der EQ-Verbindung in die Quere (siehe unten).
+
 ## Bedienung
 
 * **Mischen**: Kanalfader, ON, CUE. Bänke 1–16 … 49–64, ST IN, MIX, MTX, DCA, Summe.

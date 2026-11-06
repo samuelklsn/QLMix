@@ -1,9 +1,87 @@
-# QLMix – native macOS-Fernsteuerung für Yamaha QL/CL
+# QLMix – Yamaha QL/CL vom iPhone, iPad oder PC steuern
 
-> **Neu: QLMix Web** – dieselbe Steuerung im Browser, z. B. vom iPhone: siehe [web/README.md](web/README.md).
+QLMix ist eine moderne Fernsteuerung für Yamaha-Digitalmischpulte der **QL-Serie** (QL1, QL5) und **CL-Serie**
+(CL1, CL3, CL5) – als Alternative zur iPad-App StageMix. Ein kleiner Server läuft auf einem Rechner im Netzwerk
+des Pults; bedient wird **im Browser** auf jedem Handy, Tablet oder Computer.
 
-SwiftUI-App (Swift 6, `Network.framework`, keine Fremdbibliotheken) zur Steuerung von Yamaha QL1/QL5
-(und CL1/3/5) als Alternative zu StageMix.
+* Fader, ON, CUE für Eingänge, Stereo-Eingänge, Mix, Matrix, DCA und Summe
+* **Monitormixe** (Sends on Fader) – Musiker stellen ihren In-Ear-Mix selbst am Handy ein (`/?mix=3`)
+* **EQ und Hochpass** pro Kanal mit grafischer Kurve, Gain (Vorverstärker), Namen, Farben, Szenen, Meter
+* läuft als App auf dem Home-Bildschirm (iPhone/iPad), optional mit PIN
+
+<p align="center"><img src="docs/img/mixer.png" width="760" alt="QLMix"></p>
+
+---
+
+## Installation auf einem Windows-PC (empfohlen)
+
+QLMix läuft dann dauerhaft auf einem Windows-10/11-PC und startet **automatisch mit Windows** – ohne Anmeldung,
+unsichtbar im Hintergrund. Der PC muss im **selben Netzwerk wie das Pult** sein (LAN-Kabel oder WLAN am selben Router).
+
+### 1. Dateien herunterladen
+
+**Variante A – mit Git (empfohlen, dann sind Updates ein Doppelklick):**
+Eingabeaufforderung öffnen (Windows-Taste → `cmd`) und nacheinander eingeben:
+
+```
+winget install --id Git.Git -e
+```
+
+Eingabeaufforderung **schließen und neu öffnen**, dann:
+
+```
+git clone https://github.com/samuelklsn/QLMix.git C:\QLMix
+```
+
+**Variante B – ohne Git:** [ZIP herunterladen](https://github.com/samuelklsn/QLMix/archive/refs/heads/main.zip),
+entpacken und den Ordner `QLMix-main` nach `C:\QLMix` verschieben bzw. umbenennen.
+
+### 2. Installieren
+
+Im Explorer **`C:\QLMix\web\windows\install.cmd`** doppelklicken und die Administrator-Abfrage mit **Ja** bestätigen.
+
+Das Installationsprogramm …
+
+1. fragt nach der **IP-Adresse des Pults** (steht am QL unter **SETUP → NETWORK**),
+2. installiert bei Bedarf **Node.js**,
+3. baut die Oberfläche,
+4. richtet den **Autostart** ein (Aufgabe „QLMix“ in der Windows-Aufgabenplanung),
+5. öffnet **Port 8080** in der Windows-Firewall (nur für das lokale Netzwerk),
+6. startet QLMix und zeigt am Ende die **Adresse für das Handy** an, z. B. `http://192.168.1.50:8080`.
+
+> Erscheint „Der Computer wurde durch Windows geschützt“: auf **Weitere Informationen → Trotzdem ausführen** klicken.
+
+### 3. PC wach halten
+
+**Einstellungen → System → Netzbetrieb und Energiesparen → Energiesparmodus: Nie.**
+Am besten im Router außerdem festlegen, dass der PC **immer dieselbe IP-Adresse** bekommt –
+dann bleibt auch die Adresse auf den Handys gleich.
+
+### 4. Auf dem Handy öffnen
+
+Handy ins WLAN des Pult-Netzwerks, in **Safari/Chrome** die angezeigte Adresse öffnen
+(z. B. `http://192.168.1.50:8080`). Als App: **Teilen → Zum Home-Bildschirm**.
+
+### Später
+
+| Aufgabe | So geht's |
+|---|---|
+| Prüfen, ob QLMix läuft | Am PC `http://localhost:8080` öffnen · Protokoll: `C:\QLMix\web\qlmix.log` |
+| Update einspielen | `C:\QLMix\web\windows\update.cmd` doppelklicken |
+| Pult-IP ändern | In QLMix unter ⚙︎ Einstellungen – oder `install.cmd` erneut ausführen |
+| Autostart entfernen | `C:\QLMix\web\windows\uninstall.cmd` doppelklicken |
+
+> **EQ-Hinweis:** Läuft auf demselben PC auch der Yamaha **QL Editor**, stören sich beide bei der EQ-Steuerung –
+> den Editor dann schließen. StageMix auf dem iPad stört nicht.
+
+Weitere Details zur Web-Version (Bedienung, Musiker-Links, PIN, Mac/Linux): **[web/README.md](web/README.md)**
+
+---
+
+## Weitere Teile dieses Projekts
+
+* **QLMix für macOS** – native SwiftUI-App (siehe unten) mit [Bedienungsanleitung als PDF](docs/QLMix-Anleitung.pdf)
+* **QLSimulator** – simuliertes Pult zum Testen ohne Hardware
 
 ## Protokoll – warum keine Wireshark-Dumps nötig sind
 
@@ -103,8 +181,8 @@ Simulator ohne EQ testen: `swift run QLSimulator --no-eq`
 
 ## Bekannte Grenzen / ungeprüft
 
-* Gegen echte Hardware noch nicht getestet – entwickelt gegen den Simulator und die
-  dokumentierte Parameterliste (Companion `CLQL Parameters-1.txt`).
+* Getestet an einem **QL5 (Firmware V5.80a)**; CL-Pulte und QL1 sind vorgesehen, aber ungetestet.
+* Der Windows-Installer ist noch nicht auf einem echten Windows-PC erprobt.
 * RCP liefert auf CL/QL **nur Mix- und Matrix-Meter**, keine Eingangs-Meter.
 * **EQ:** CL/QL geben EQ/HPF über RCP nicht heraus. QLMix Web nutzt dafür das Editor-Protokoll (SysEx über Port 50000) – siehe [web/README.md](web/README.md#eq-clql). Die Mac-App nutzt es noch nicht.
 * Die Fader-Kurve (Position ↔ dB) ist an Yamaha angelehnt, aber nicht 1:1 identisch.
