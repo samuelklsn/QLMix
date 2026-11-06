@@ -33,7 +33,7 @@ Eingabeaufforderung **schließen und neu öffnen**, dann:
 git clone https://github.com/samuelklsn/QLMix.git C:\QLMix
 ```
 
-**Variante B – ohne Git:** [ZIP herunterladen](https://github.com/samuelklsn/QLMix/archive/refs/heads/main.zip),
+**Variante B – ohne Git:** [ZIP herunterladen](https://github.com/samuelklsn/QLMix/archive/main.zip),
 entpacken und den Ordner `QLMix-main` nach `C:\QLMix` verschieben bzw. umbenennen.
 
 ### 2. Installieren

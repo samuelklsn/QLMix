@@ -51,7 +51,7 @@ auch ohne Anmeldung, unsichtbar im Hintergrund und mit automatischem Neustart na
    winget install --id Git.Git -e
    git clone https://github.com/samuelklsn/QLMix.git C:\QLMix
    ```
-   (Alternativ [ZIP herunterladen](https://github.com/samuelklsn/QLMix/archive/refs/heads/main.zip) und nach `C:\QLMix` entpacken.
+   (Alternativ [ZIP herunterladen](https://github.com/samuelklsn/QLMix/archive/main.zip) und nach `C:\QLMix` entpacken.
    Ausführliche Schritt-für-Schritt-Anleitung: [README im Hauptordner](../README.md#installation-auf-einem-windows-pc-empfohlen).)
 2. **Installieren:** Im Explorer `C:\QLMix\web\windows\install.cmd` doppelklicken und die
    Administrator-Abfrage bestätigen. Das Skript fragt nach der **IP-Adresse des Pults**, installiert bei Bedarf
