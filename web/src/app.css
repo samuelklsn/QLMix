@@ -1,0 +1,75 @@
+:root {
+  --bg: #0d0f12;
+  --text: #eef0f3;
+  --muted: #8b929c;
+  --strip-bg: #181b20;
+  --strip-send-bg: #251c12;
+  --strip-master-bg: #1c1f26;
+  --strip-w: 74px;
+  color-scheme: dark;
+}
+@media (max-width: 430px) { :root { --strip-w: 68px; } }
+@media (min-width: 1100px) { :root { --strip-w: 80px; } }
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+button {
+  font: inherit;
+  color: inherit;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+button:disabled { cursor: default; opacity: 0.5; }
+input[type="text"], input[type="number"], input[type="password"] {
+  font: inherit;
+  font-size: 16px; /* prevents iOS zoom on focus */
+  color: var(--text);
+  background: #0b0d10;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  padding: 9px 12px;
+  -webkit-user-select: text;
+  user-select: text;
+}
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 34px;
+  background: transparent;
+  touch-action: none;
+}
+input[type="range"]::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: #2a2f37; }
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 26px; height: 26px; margin-top: -10px; border-radius: 50%;
+  background: #e8eaed; box-shadow: 0 2px 6px rgba(0,0,0,.5);
+}
+input[type="range"]::-moz-range-track { height: 6px; border-radius: 3px; background: #2a2f37; }
+input[type="range"]::-moz-range-thumb { width: 24px; height: 24px; border-radius: 50%; background: #e8eaed; border: none; }
+
+.pill {
+  height: 36px; padding: 0 14px; border-radius: 10px; background: #252a31;
+  font-weight: 700; font-size: 13px; white-space: nowrap;
+}
+.pill.lit { background: #34c759; color: #06260f; }
+.pill.hpf.lit { background: #e6e8eb; color: #111; }
+.pill.ghost { background: transparent; border: 1px solid rgba(255,255,255,.18); }
+.pill.danger { background: #ff453a; color: #fff; }
+
+.dot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: #6b7078; }
+.dot.connected { background: #34c759; box-shadow: 0 0 8px #34c75999; }
+.dot.connecting, .dot.reconnecting { background: #ff9f0a; }
+.dot.failed { background: #ff453a; }

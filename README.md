@@ -1,5 +1,7 @@
 # QLMix – native macOS-Fernsteuerung für Yamaha QL/CL
 
+> **Neu: QLMix Web** – dieselbe Steuerung im Browser, z. B. vom iPhone: siehe [web/README.md](web/README.md).
+
 SwiftUI-App (Swift 6, `Network.framework`, keine Fremdbibliotheken) zur Steuerung von Yamaha QL1/QL5
 (und CL1/3/5) als Alternative zu StageMix.
 
@@ -104,5 +106,5 @@ Simulator ohne EQ testen: `swift run QLSimulator --no-eq`
 * Gegen echte Hardware noch nicht getestet – entwickelt gegen den Simulator und die
   dokumentierte Parameterliste (Companion `CLQL Parameters-1.txt`).
 * RCP liefert auf CL/QL **nur Mix- und Matrix-Meter**, keine Eingangs-Meter.
-* EQ-Adressen sind für CL/QL nicht bestätigt (siehe Abschnitt EQ).
+* **EQ:** CL/QL geben EQ/HPF über RCP nicht heraus. QLMix Web nutzt dafür das Editor-Protokoll (SysEx über Port 50000) – siehe [web/README.md](web/README.md#eq-clql). Die Mac-App nutzt es noch nicht.
 * Die Fader-Kurve (Position ↔ dB) ist an Yamaha angelehnt, aber nicht 1:1 identisch.

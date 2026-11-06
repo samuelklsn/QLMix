@@ -108,6 +108,10 @@ final class SimulatedConsole: @unchecked Sendable {
                 case .dca: .yellow
                 }
                 set(.color, .string(color.rawValue))
+                if id.kind == .input || id.kind == .stereoInput {
+                    // Head amp gain (0.01 dB, −6 … +66 dB) – available on real CL/QL consoles.
+                    values[key("MIXER:Current/\(id.kind.addressSegment)/Port/HA/Gain", x, 0)] = .int([2400, 3000, 1800, 4200][id.index % 4])
+                }
                 if id.kind.hasEQ, !options.noEQ {
                     let schema = EQSchema.peq
                     var eq = EQSettings()
