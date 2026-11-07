@@ -118,3 +118,29 @@ F0 43 30 3E 19 01  <Element> <Index> <Kanal>  F7                                
   Rechner** wie der QLMix-Server, kommen sich beide in die Quere – den Editor dann schließen. StageMix auf dem iPad stört nicht.
 * Das Pult meldet EQ-Änderungen nicht von selbst. Der Server fragt deshalb den EQ des gerade geöffneten Kanals
   alle 1,5 Sekunden ab – Änderungen am Pult erscheinen mit kurzer Verzögerung.
+
+## Dynamics und Premium Rack (CL/QL) – Stand: vorbereitet
+
+Über das Editor-Protokoll (Port 50000) liest und schreibt QLMix auch:
+
+* **Dynamics** jedes Kanals (Kanal antippen → Reiter „Dynamics“): Dynamics 1 (Gate/Ducking/Comp/Expander) und
+  Dynamics 2 (Comp/Compander/De-Esser) der Eingänge, Dynamics der Mix-, Matrix- und Summenkanäle.
+  Elemente 61/64 (Eingänge), 88 (Mix), 105 (Matrix), 119 (Stereo); Index 0 an, 1 Typ, 9 Attack, 10 Range,
+  11 Hold, 12 Release/Decay, 13 Ratio, 14 Gain, 15 Knee, 16 Threshold.
+* **Premium Rack** (Knopf „Rack“ oben): 8 Racks mit A/B-Seite, Modulname, Bypass und alle Parameter als Rohwerte.
+  Element 705 („Kanal“ = Rack 0…7): Index 0–3 Name, 4/5 Bypass A/B, 6–73 Parameter A, 74–141 Parameter B;
+  Element 132 = eingesetzter Modultyp.
+
+Welche Rohwerte welchen Anzeigen am Pult entsprechen (z. B. Threshold-Stufe → dB, Portico-Regler → Parameter-Nummer),
+wird einmalig am Pult abgeglichen. Bis dahin sind betroffene Anzeigen mit **≈** markiert.
+
+### Kalibrierung am Pult (ca. 15–20 Minuten)
+
+1. MacBook (oder ein anderer Rechner mit diesem Projekt) ins Netzwerk des Pults, QLMix starten.
+2. In QLMix: ⚙︎ → **Rohwerte an**.
+3. **Rack:** „Rack“ → z. B. Rack 1 (Portico 5043) öffnen. Am Pult nacheinander jeden Regler des Moduls drehen –
+   unter „Kalibrierung – zuletzt geändert“ erscheint, welcher Parameter (A·n) sich ändert und mit welchem Wert.
+   Für jede Reglerstellung Pult-Anzeige ↔ Rohwert notieren.
+4. **Dynamics:** auf einem freien Kanal am Pult Threshold, Ratio, Attack, Release, Hold, Range, Gain, Knee und den Typ
+   verändern und die Rohwerte in QLMix mit der Anzeige am Pult vergleichen.
+5. Die Zuordnungen kommen nach `shared/ql-params.ts` (`DYNA_CONTROLS`, `RACK_MODULES`).

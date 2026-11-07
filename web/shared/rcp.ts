@@ -424,7 +424,7 @@ export const QL_WRITABLE: Record<number, number[]> = {
   66: [0, 1],
 };
 
-function qlChannels(c: ChannelId, s: EqSchema): number[] {
+export function qlChannels(c: ChannelId, s: EqSchema): number[] {
   switch (c.kind) {
     case "input": return [c.index];
     case "stereoInput": { const base = s.inputCount ?? 64; return [base + c.index * 2, base + c.index * 2 + 1]; }

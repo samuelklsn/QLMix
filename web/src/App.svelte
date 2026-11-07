@@ -6,6 +6,7 @@
   import Strip from "./lib/Strip.svelte";
   import ChannelSheet from "./lib/ChannelSheet.svelte";
   import SettingsSheet from "./lib/SettingsSheet.svelte";
+  import RackSheet from "./lib/RackSheet.svelte";
 
   // ?mix=3 → locked to monitor mix 3 (for musicians)
   const params = new URLSearchParams(location.search);
@@ -17,6 +18,7 @@
   let bank = $state(saved("bank", "input:0"));
   let sheet = $state<ChannelId | null>(null);
   let settings = $state(false);
+  let rack = $state(false);
   let pin = $state("");
   let width = $state(1000);
 
@@ -99,6 +101,9 @@
       <span class="scene">Szene <b>{String(store.info.scene).padStart(3, "0")}</b></span>
     {/if}
     {#if lockedMix === null}
+      {#if store.eqSchema?.kind === "ql"}
+        <button class="icon rackbtn" onclick={() => (rack = true)} aria-label="Premium Rack">Rack</button>
+      {/if}
       <button class="icon" onclick={() => (settings = true)} aria-label="Einstellungen">⚙︎</button>
     {/if}
   </header>
@@ -163,6 +168,9 @@
 {#if settings}
   <SettingsSheet onclose={() => (settings = false)} />
 {/if}
+{#if rack}
+  <RackSheet onclose={() => (rack = false)} />
+{/if}
 
 {#if store.needPin}
   <div class="pin">
@@ -191,6 +199,7 @@
   .scene { font-size: 13px; color: var(--muted); white-space: nowrap; }
   .scene b { color: #6fd8ff; font-variant-numeric: tabular-nums; font-size: 15px; }
   .icon { width: 38px; height: 38px; border-radius: 10px; background: #1d2026; font-size: 18px; }
+  .icon.rackbtn { width: auto; padding: 0 10px; font-size: 13px; font-weight: 700; }
   .modes { display: flex; margin: 2px 12px 6px; background: #0e1013; border-radius: 11px; padding: 3px; }
   .modes button { flex: 1; height: 34px; border-radius: 9px; font-weight: 700; color: var(--muted); }
   .modes button.sel { background: #2a2f37; color: var(--text); }

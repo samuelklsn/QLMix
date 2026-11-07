@@ -107,7 +107,10 @@
         Meter: {info?.meterStatus === "active" ? "aktiv" : info?.meterStatus === "unsupported" ? "nicht unterstützt" : "warte …"} ·
         EQ: {info?.eqStatus === "available" ? `verfügbar (${info.eq})` : info?.eqStatus === "unavailable" ? "vom Pult nicht freigegeben" : "prüfe …"}
       </p>
-      <button class="pill" onclick={() => (showLog = !showLog)}>{showLog ? "Log ausblenden" : "Log anzeigen"}</button>
+      <div class="row">
+        <button class="pill" onclick={() => (showLog = !showLog)}>{showLog ? "Log ausblenden" : "Log anzeigen"}</button>
+        <button class="pill" class:lit={store.rawMode} onclick={() => store.setRawMode(!store.rawMode)}>Rohwerte {store.rawMode ? "an" : "aus"}</button>
+      </div>
       {#if showLog}
         <pre class="log">{store.log.map((e) => `${new Date(e.t).toLocaleTimeString()} ${e.d === "tx" ? "→" : e.d === "rx" ? "←" : "•"} ${e.s}`).join("\n")}</pre>
       {/if}

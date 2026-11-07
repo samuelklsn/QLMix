@@ -117,3 +117,27 @@ test("QL editor protocol (SysEx)", () => {
   assert.equal(r.QL_FREQ.length, 125);
   assert.equal(r.QL_Q.length, 45);
 });
+
+test("QL dynamics and premium rack keys", async () => {
+  const q = await import("../shared/ql-params.ts");
+  const s = { ...r.QL_SCHEMA, inputCount: 64 };
+  const ch1 = r.channelId("input", 0);
+  assert.equal(q.dynaKey(ch1, 1, "threshold", s), "QL:64:16 0 0");
+  assert.equal(q.dynaKey(r.channelId("mix", 2), 0, "ratio", s), "QL:88:13 2 0");
+  assert.equal(q.dynaKey(r.channelId("mix", 2), 1, "ratio", s), null, "outputs have one dynamics section");
+  assert.deepEqual(q.dynaWriteKeys(r.channelId("stereoInput", 0), 0, "on", s), ["QL:61:0 64 0", "QL:61:0 65 0"]);
+  assert.equal(q.allDynaKeys(ch1, s).length, 34);
+  assert.equal(q.DYNA_CONTROLS.ratio!.text(5), "2.0:1");
+  assert.equal(q.DYNA_CONTROLS.ratio!.text(15), "∞:1");
+  assert.equal(q.DYNA_CONTROLS.threshold!.text(-180), "-18.0 dB");
+
+  assert.equal(q.rackKey(3, 4), "QL:705:4 3 0");
+  assert.equal(q.rackParamIndex("A", 1), 6);
+  assert.equal(q.rackParamIndex("B", 1), 74);
+  assert.equal(q.allRackKeys(0).length, 143);
+  const packed = [0x506f7274, 0x69636f35, 0x30343300, 0]; // "Portico5043"
+  assert.equal(q.decodeRackName(packed), "Portico5043");
+  assert.equal(q.decodeRackName([0, 0, 0, 0]), null);
+  const w = q.extraWritable();
+  assert.ok(w[64].includes(16) && !w[705].includes(0), "rack names are read-only");
+});

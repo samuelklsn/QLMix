@@ -7,6 +7,7 @@ des Pults; bedient wird **im Browser** auf jedem Handy, Tablet oder Computer.
 * Fader, ON, CUE für Eingänge, Stereo-Eingänge, Mix, Matrix, DCA und Summe
 * **Monitormixe** (Sends on Fader) – Musiker stellen ihren In-Ear-Mix selbst am Handy ein (`/?mix=3`)
 * **EQ und Hochpass** pro Kanal mit grafischer Kurve, Gain (Vorverstärker), Namen, Farben, Szenen, Meter
+* **Dynamics** (Gate/Kompressor …) und **Premium Rack** (Portico, Dynamic EQ …) – *in Vorbereitung, Abgleich am Pult folgt*
 * läuft als App auf dem Home-Bildschirm (iPhone/iPad), optional mit PIN
 
 <p align="center"><img src="docs/img/mixer.png" width="760" alt="QLMix"></p>
@@ -61,6 +62,20 @@ dann bleibt auch die Adresse auf den Handys gleich.
 
 Handy ins WLAN des Pult-Netzwerks, in **Safari/Chrome** die angezeigte Adresse öffnen
 (z. B. `http://192.168.1.50:8080`). Als App: **Teilen → Zum Home-Bildschirm**.
+
+### Update einspielen (neue Version von GitHub)
+
+Wenn es eine neue Version gibt, auf dem Windows-PC:
+
+1. Im Explorer **`C:\QLMix\web\windows\update.cmd`** doppelklicken.
+2. Die Administrator-Abfrage mit **Ja** bestätigen.
+3. Warten, bis **„QLMix wurde aktualisiert und neu gestartet“** erscheint (ca. 1 Minute), dann Enter drücken.
+
+Das Update holt den neuesten Stand von GitHub, baut die Oberfläche neu und startet QLMix neu.
+Die Einstellungen (Pult-IP, PIN) bleiben erhalten. Auf den Handys danach die Seite einmal neu laden.
+
+> Wurde QLMix per **ZIP** installiert (ohne Git): neue ZIP herunterladen, entpacken und den Inhalt über `C:\QLMix`
+> kopieren (Dateien ersetzen), danach `update.cmd` ausführen.
 
 ### Später
 

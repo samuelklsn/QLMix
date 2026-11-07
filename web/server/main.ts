@@ -109,10 +109,11 @@ const server = http.createServer((req, res) => {
 
 // ---------------------------------------------------------------- WebSocket
 
-interface Client { ws: WebSocket; authed: boolean; eqWatch: ChannelId | null }
+interface Client { ws: WebSocket; authed: boolean; eqWatch: ChannelId | null; rackWatch: number | null }
 
 function updateWatched() {
   ql.setWatched([...clients].map((c) => c.eqWatch).filter((c): c is ChannelId => c !== null));
+  ql.setWatchedRacks([...clients].map((c) => c.rackWatch).filter((r): r is number => r !== null));
 }
 const clients = new Set<Client>();
 const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
@@ -143,7 +144,7 @@ function snapshot(c: Client) {
 const WRITABLE = /^MIXER:Current\/(?:(?:InCh|StInCh|Mix|Mtrx|St|DCA)\/(?:Fader\/Level|Fader\/On|Label\/Name|Label\/Color|ToMix\/Level|ToMix\/On|Port\/HA\/Gain|PEQ\/.+|EQ\/.+|HPF\/(?:On|Freq))|Cue\/(?:InCh|StInCh|Mix|Mtrx|St|DCA)\/On)$/;
 
 wss.on("connection", (ws) => {
-  const client: Client = { ws, authed: config.pin === "", eqWatch: null };
+  const client: Client = { ws, authed: config.pin === "", eqWatch: null, rackWatch: null };
   clients.add(client);
   send(client, { t: "hello", pinRequired: !client.authed });
   if (client.authed) snapshot(client);
@@ -177,6 +178,10 @@ wss.on("connection", (ws) => {
         updateWatched();
         break;
       }
+      case "rackwatch":
+        client.rackWatch = Number.isInteger(m.rack) ? m.rack : null;
+        updateWatched();
+        break;
       case "recall": link.recallScene(Number(m.n)); break;
       case "resync": link.resync(); break;
       case "connect":

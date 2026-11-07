@@ -38,6 +38,8 @@ class Store {
   pinError = $state(false);
   meters = $state<Record<string, number[]>>({});
   log = $state<LogEntry[]>([]);
+  /** Shows raw console values next to converted ones (for calibration). */
+  rawMode = $state(localStorage.getItem("qlmix.raw") === "1");
 
   private ws?: WebSocket;
   private touching = new Map<Key, number>();
@@ -202,6 +204,16 @@ class Store {
     if (!s) return;
     const snapped = snapEq(eq, s);
     for (const p of params) this.write(eqWriteKeys(c, p, s), eqRaw(snapped, p, s), immediate);
+  }
+
+  setRawMode(on: boolean): void {
+    this.rawMode = on;
+    localStorage.setItem("qlmix.raw", on ? "1" : "0");
+  }
+
+  /** Tells the server which Premium Rack page is open (polled for changes). */
+  watchRack(rack: number | null): void {
+    this.sendRaw({ t: "rackwatch", rack });
   }
 
   /** Tells the server which channel's EQ is open (it polls it for changes made elsewhere). */

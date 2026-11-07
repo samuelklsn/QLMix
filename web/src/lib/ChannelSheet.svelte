@@ -5,6 +5,8 @@
   } from "../../shared/rcp.ts";
   import { store } from "./store.svelte.ts";
   import EqEditor from "./EqEditor.svelte";
+  import DynamicsPanel from "./DynamicsPanel.svelte";
+  import { dynaSlots } from "../../shared/ql-params.ts";
 
   interface Props {
     channel: ChannelId;
@@ -14,8 +16,11 @@
   }
   let { channel, channels, onclose, onselect }: Props = $props();
 
-  let chosenTab = $state<"eq" | "channel">("eq");
-  const tab = $derived(hasEQ(channel.kind) ? chosenTab : "channel");
+  let chosenTab = $state<"eq" | "dyna" | "channel">("eq");
+  const withDyna = $derived(store.eqSchema?.kind === "ql" && dynaSlots(channel.kind) > 0);
+  const tab = $derived(
+    chosenTab === "eq" && !hasEQ(channel.kind) ? (withDyna ? "dyna" : "channel") : chosenTab === "dyna" && !withDyna ? "channel" : chosenTab,
+  );
   const color = $derived(normalizeColor(store.get(channelParamKey(channel, "color")) as string | undefined));
   const name = $derived(store.name(channel));
   const gain = $derived(store.num(channelParamKey(channel, "gain")));
@@ -54,15 +59,18 @@
     <button class="icon close" onclick={onclose} aria-label="Schließen">✕</button>
   </header>
 
-  {#if hasEQ(channel.kind)}
+  {#if hasEQ(channel.kind) || withDyna}
     <div class="seg">
-      <button class:sel={tab === "eq"} onclick={() => (chosenTab = "eq")}>EQ</button>
+      {#if hasEQ(channel.kind)}<button class:sel={tab === "eq"} onclick={() => (chosenTab = "eq")}>EQ</button>{/if}
+      {#if withDyna}<button class:sel={tab === "dyna"} onclick={() => (chosenTab = "dyna")}>Dynamics</button>{/if}
       <button class:sel={tab === "channel"} onclick={() => (chosenTab = "channel")}>Kanal</button>
     </div>
   {/if}
 
   <div class="body">
-    {#if tab === "eq"}
+    {#if tab === "dyna"}
+      <DynamicsPanel {channel} />
+    {:else if tab === "eq"}
       {#if store.eqSchema}
         <EqEditor {channel} />
       {:else if store.info?.eqStatus === "probing" || store.info?.eqStatus === "unknown"}

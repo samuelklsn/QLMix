@@ -14,6 +14,10 @@ import {
   type ChannelId, type ConsoleModel, type EqSchema, type Key,
   QL_SCHEMA, QL_WRITABLE, allChannels, eqKey, eqParamsFor, hasEQ, parseQlKey, qlKey, qlParseChange, qlSysex,
 } from "../shared/rcp.ts";
+import { RACK_COUNT, allDynaKeys, allRackKeys, extraWritable } from "../shared/ql-params.ts";
+
+/** Everything a client may write over the editor protocol: EQ/HPF, dynamics, rack parameters. */
+const WRITABLE: Record<number, number[]> = { ...QL_WRITABLE, ...extraWritable() };
 
 const PORT = 50000;
 const POLL_MS = 1500;
@@ -39,6 +43,7 @@ export class QLLink extends EventEmitter {
   private timers: NodeJS.Timeout[] = [];
   private lastWrite = new Map<Key, number>();
   private watched = new Map<string, ChannelId>();
+  private watchedRacks = new Set<number>();
   private gotAnswer = false;
 
   get available(): boolean {
@@ -64,14 +69,19 @@ export class QLLink extends EventEmitter {
 
   /** Channels whose EQ is open in some client – polled for changes made elsewhere. */
   setWatched(channels: ChannelId[]): void {
-    this.watched = new Map(channels.filter((c) => hasEQ(c.kind)).map((c) => [`${c.kind}:${c.index}`, c]));
+    this.watched = new Map(channels.map((c) => [`${c.kind}:${c.index}`, c]));
   }
 
-  /** Writes a value. Only EQ/HPF parameters listed in QL_WRITABLE are accepted. */
+  /** Racks whose page is open in some client – polled like watched channels. */
+  setWatchedRacks(racks: number[]): void {
+    this.watchedRacks = new Set(racks.filter((r) => Number.isInteger(r) && r >= 0 && r < RACK_COUNT));
+  }
+
+  /** Writes a value. Only parameters listed in WRITABLE are accepted. */
   set(k: Key, v: number): boolean {
     const p = parseQlKey(k);
-    if (!p || !QL_WRITABLE[p.elem]?.includes(p.index) || !Number.isInteger(v)) return false;
-    if (Math.abs(v) > 200) return false;
+    if (!p || !WRITABLE[p.elem]?.includes(p.index) || !Number.isInteger(v)) return false;
+    if (Math.abs(v) > 10_000_000) return false;
     this.values.set(k, v);
     this.lastWrite.set(k, Date.now());
     this.write([qlSysex(p.elem, p.index, p.ch, v)]);
@@ -138,22 +148,27 @@ export class QLLink extends EventEmitter {
 
   // ------------------------------------------------------------ requests
 
+  private request(keys: Key[]): number[][] {
+    return keys.map((k) => { const p = parseQlKey(k)!; return qlSysex(p.elem, p.index, p.ch); });
+  }
+
   private requestsFor(c: ChannelId): number[][] {
-    return eqParamsFor(c, this.schema).map((e) => {
-      const p = parseQlKey(eqKey(c, e, this.schema))!;
-      return qlSysex(p.elem, p.index, p.ch);
-    });
+    const eq = hasEQ(c.kind) ? eqParamsFor(c, this.schema).map((e) => eqKey(c, e, this.schema)) : [];
+    return this.request([...eq, ...allDynaKeys(c, this.schema)]);
   }
 
   private syncAll(): void {
     if (!this.model) return;
-    const reqs = allChannels(this.model).filter((c) => hasEQ(c.kind)).flatMap((c) => this.requestsFor(c));
+    const reqs = allChannels(this.model).flatMap((c) => this.requestsFor(c));
+    for (let r = 0; r < RACK_COUNT; r++) reqs.push(...this.request(allRackKeys(r)));
     this.enqueue(reqs);
   }
 
   private poll(): void {
     if (this.queue.length > 0) return;
-    this.enqueue([...this.watched.values()].flatMap((c) => this.requestsFor(c)));
+    const reqs = [...this.watched.values()].flatMap((c) => this.requestsFor(c));
+    for (const r of this.watchedRacks) reqs.push(...this.request(allRackKeys(r)));
+    this.enqueue(reqs);
   }
 
   private enqueue(msgs: number[][]): void {
