@@ -11,8 +11,18 @@ des Pults; bedient wird **im Browser** auf jedem Handy, Tablet oder Computer.
   und regelt es so, dass jeder Redner gleich laut im Raum ankommt
 * **Dynamics** (Gate/Kompressor …) und **Premium Rack** (Portico, Dynamic EQ …) – *in Vorbereitung, Abgleich am Pult folgt*
 * läuft als App auf dem Home-Bildschirm (iPhone/iPad), optional mit PIN
+* **Neues Design in 1.2**: klarer, besser lesbar und auf Handy, Tablet und Computer gleich aufgeräumt
 
-<p align="center"><img src="docs/img/mixer.png" width="760" alt="QLMix"></p>
+<p align="center"><img src="docs/img/web/mixer-desktop.png" width="820" alt="QLMix im Browser: Kanalzüge mit Namen, ON, CUE und Fadern"></p>
+
+<p align="center">
+  <img src="docs/img/web/eq-phone.png" width="250" alt="EQ eines Kanals am iPhone">
+  &nbsp;
+  <img src="docs/img/web/monitor-phone.png" width="250" alt="Monitormix am iPhone">
+  &nbsp;
+  <img src="docs/img/web/auto-phone.png" width="250" alt="Raum-Automatik am iPhone">
+</p>
+<p align="center"><sub>EQ mit Kurve · Monitormix für Musiker · Raum-Automatik</sub></p>
 
 ---
 

@@ -41,13 +41,14 @@
 
 <div class="strip" class:send={sendMode} class:cue class:off={!on} class:master>
   <div class="num">{channelLabel(channel)}</div>
-  <button class="name" style="background: {COLOR_HEX[color]}; color: {darkTextColors.includes(color) ? '#111' : '#fff'}" onclick={() => onopen?.(channel)} disabled={!enabled || !onopen}>
+  <button class="name" style="background: {COLOR_HEX[color]}; color: {darkTextColors.includes(color) ? '#111' : '#fff'}"
+    onclick={() => onopen?.(channel)} disabled={!enabled || !onopen} title={onopen ? `${name} – EQ, Dynamics, Gain` : name}>
     {name}
   </button>
   <div class="buttons">
-    <button class="key on" class:lit={on} onclick={toggleOn} disabled={!enabled}>ON</button>
+    <button class="key on" class:lit={on} onclick={toggleOn} disabled={!enabled} aria-pressed={on} aria-label="{name} ON">ON</button>
     {#if !sendMode}
-      <button class="key cuebtn" class:lit={cue} onclick={toggleCue} disabled={!enabled}>CUE</button>
+      <button class="key cuebtn" class:lit={cue} onclick={toggleCue} disabled={!enabled} aria-pressed={cue} aria-label="{name} CUE">CUE</button>
     {/if}
   </div>
   <div class="value" class:inf={level === undefined || level <= -13800}>{levelText(level)}</div>
@@ -57,6 +58,7 @@
       accent={sendMode ? "#ff9f0a" : COLOR_HEX[color]}
       disabled={!enabled}
       {meter}
+      label={sendMode ? `${name} Send` : `${name} Fader`}
       onchange={setLevel}
       ontouch={(a) => store.touch(store.levelKeys(channel, mix), a)}
     />
@@ -67,61 +69,69 @@
   .strip {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    width: var(--strip-w, 74px);
+    gap: var(--s2);
+    width: var(--strip-w);
     flex: none;
-    padding: 6px 5px 8px;
-    border-radius: 10px;
+    padding: var(--s2) 6px var(--s2);
+    border-radius: 12px;
     background: var(--strip-bg);
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    box-shadow: inset 0 0 0 1px var(--separator);
     scroll-snap-align: start;
+    transition: box-shadow 150ms var(--ease);
   }
   .strip.send { background: var(--strip-send-bg); }
   .strip.master { background: var(--strip-master-bg); }
-  .strip.cue { border-color: rgba(255, 214, 10, 0.75); }
+  .strip.cue { box-shadow: inset 0 0 0 1.5px var(--cue); }
   .num {
     text-align: center;
-    font-size: 10px;
+    font-size: var(--fs-caption2);
+    line-height: 13px;
     font-weight: 600;
-    color: var(--muted);
+    color: var(--label-3);
     letter-spacing: 0.02em;
+    font-variant-numeric: tabular-nums;
   }
-  .name:disabled { opacity: 1; cursor: default; }
   .name {
     height: 28px;
-    border-radius: 6px;
-    font-size: 12px;
+    border-radius: var(--r-xs);
+    font-size: var(--fs-footnote);
     font-weight: 700;
+    letter-spacing: -0.01em;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    padding: 0 3px;
+    padding: 0 4px;
+    box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.25);
   }
-  .buttons { display: flex; flex-direction: column; gap: 5px; }
+  .name:disabled { cursor: default; }
+  .name:not(:disabled):active { filter: brightness(0.9); }
+  .buttons { display: flex; flex-direction: column; gap: 6px; }
   .key {
-    height: 32px;
-    border-radius: 7px;
-    font-size: 11px;
-    font-weight: 800;
-    letter-spacing: 0.04em;
-    background: #2a2e35;
-    color: rgba(255, 255, 255, 0.55);
-    transition: background 0.1s;
+    height: 36px;
+    border-radius: 8px;
+    font-size: var(--fs-caption);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    background: var(--surface-2);
+    color: var(--label-2);
+    transition: background-color 120ms var(--ease), color 120ms, box-shadow 120ms;
   }
-  .key.on.lit { background: #34c759; color: #06260f; box-shadow: 0 0 10px rgba(52, 199, 89, 0.45); }
-  .send .key.on.lit { background: #ff9f0a; color: #2a1700; box-shadow: 0 0 10px rgba(255, 159, 10, 0.45); }
-  .key.cuebtn { height: 26px; }
-  .key.cuebtn.lit { background: #ffd60a; color: #2a2300; }
+  .key:not(:disabled):active { transform: scale(0.96); }
+  .key:disabled { opacity: 0.5; }
+  .key.on.lit { background: var(--on); color: var(--on-ink); box-shadow: 0 0 12px rgba(48, 209, 88, 0.35); }
+  .send .key.on.lit { background: var(--send); color: var(--send-ink); box-shadow: 0 0 12px rgba(255, 159, 10, 0.35); }
+  .key.cuebtn { height: 32px; }
+  .key.cuebtn.lit { background: var(--cue); color: var(--cue-ink); }
   .value {
     text-align: center;
-    font-size: 13px;
+    font-size: var(--fs-footnote);
+    line-height: 24px;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
-    padding: 3px 0;
-    border-radius: 5px;
-    background: rgba(0, 0, 0, 0.45);
+    border-radius: var(--r-xs);
+    background: var(--sunken);
   }
-  .value.inf { color: var(--muted); }
+  .value.inf { color: var(--label-2); }
   .fader { flex: 1; min-height: 0; }
-  .off .fader { opacity: 0.75; }
+  .off .fader { opacity: 0.7; }
 </style>

@@ -3,6 +3,8 @@
   import { type ChannelId, channelLabel, channelParamKey, channelsOf } from "../../shared/rcp.ts";
   import { RoomMeter } from "./room-meter.ts";
   import { store } from "./store.svelte.ts";
+  import Sheet from "./Sheet.svelte";
+  import Icon from "./Icon.svelte";
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -62,7 +64,7 @@
   };
   const pct = (db: number | null | undefined) => (db === null || db === undefined ? 0 : Math.max(0, Math.min(100, ((db + 80) / 80) * 100)));
   const fmt = (db: number | null | undefined) => (db === null || db === undefined ? "–" : `${db.toFixed(1)} dB`);
-  const speeds = [{ v: 0.5, l: "langsam" }, { v: 1, l: "normal" }, { v: 2, l: "schnell" }];
+  const speeds = [{ v: 0.5, l: "Langsam" }, { v: 1, l: "Normal" }, { v: 2, l: "Schnell" }];
 
   /** What is still missing before the automatic can start – shown as a checklist. */
   const missing = $derived.by(() => {
@@ -75,48 +77,41 @@
   });
 </script>
 
-<div class="backdrop" onclick={onclose} role="presentation"></div>
-<div class="sheet" role="dialog" aria-label="Raum-Automatik">
-  <header>
-    <h2>Raum-Automatik <span class="badge">Test</span></h2>
-    <button class="icon" onclick={onclose} aria-label="Schließen">✕</button>
-  </header>
-
-  <div class="body">
-    {#if !auto || !cfg || !st}
-      <p class="note">Verbinde …</p>
-    {:else}
-      <!-- Status + start/stop -->
+<Sheet title="Raum-Automatik" badge="Test" {onclose}>
+  {#if !auto || !cfg || !st}
+    <p class="t-footnote">Verbinde …</p>
+  {:else}
+    <!-- Status + start/stop -->
+    <div class="hero">
       <div class="status {st.level}">
-        <span class="dot"></span>
-        <div>
-          <b>{st.message}</b>
-          <small>
+        <span class="sdot"></span>
+        <div class="stext">
+          <b class="t-headline">{st.message}</b>
+          <span class="t-footnote">
             {st.active ? `Aktives Mikro: ${st.active}` : "Kein aktives Mikro"} ·
             {st.metersAvailable ? "erkannt über Pult-Pegel" : "Erkennung: einziges offenes Mikro"}
-          </small>
+          </span>
         </div>
       </div>
       {#if st.enabled}
-        <button class="big stop" onclick={() => store.autoAction("stop")}>■ Automatik stoppen</button>
+        <button class="pill danger wide cta" onclick={() => store.autoAction("stop")}><Icon name="stop" size={16} /> Automatik stoppen</button>
       {:else}
-        <button class="big start" class:notready={missing.length > 0} onclick={() => store.autoAction("start")}>▶ Automatik starten</button>
+        <button class="pill wide cta" class:primary={missing.length === 0} onclick={() => store.autoAction("start")}><Icon name="play" size={16} /> Automatik starten</button>
         {#if missing.length > 0}
           <div class="todo">
-            <b>Noch zu tun:</b>
+            <span class="todo-title"><Icon name="warning" size={15} /> Noch zu tun</span>
             <ul>{#each missing as m}<li>{m}</li>{/each}</ul>
           </div>
         {/if}
       {/if}
-      {#if store.autoError && store.autoErrorAction !== "reference"}<p class="err">{store.autoError}</p>{/if}
+      {#if store.autoError && store.autoErrorAction !== "reference"}<p class="err" role="alert">{store.autoError}</p>{/if}
+    </div>
 
-      <!-- Live detection per selected mic -->
-      {#if st.mics?.length}
-        <div class="mics">
-          <div class="micshead">
-            <b>Erkennung</b>
-            <small>{st.metersAvailable ? "Pult-Pegel über Grundrauschen" : "ohne Pult-Pegel: nur das einzige offene Mikro zählt"}</small>
-          </div>
+    <!-- Live detection per selected mic -->
+    {#if st.mics?.length}
+      <section>
+        <h3 class="section-title">Erkennung</h3>
+        <div class="group mics">
           {#each st.mics as m}
             <div class="mic" class:speaking={m.speaking} class:active={st.activeKey === m.key}>
               <span class="mname">{m.label}</span>
@@ -127,182 +122,204 @@
                 {/if}
               </div>
               <span class="mstate">
-                {#if !m.on}<em class="warn">aus</em>
+                {#if !m.on}<em class="warn">Aus</em>
                 {:else if !m.faderOpen}<em class="warn">Fader zu</em>
-                {:else if m.speaking}<em class="ok">spricht</em>
-                {:else}<em>ruhig</em>{/if}
+                {:else if m.speaking}<em class="ok">Spricht</em>
+                {:else}<em>Ruhig</em>{/if}
               </span>
             </div>
           {/each}
         </div>
-      {/if}
-
-      <!-- 1 Measurement -->
-      <section>
-        <h3>1 · Messung in der Raummitte</h3>
-        {#if !RoomMeter.supported}
-          <div class="box">
-            <p><b>Für das Mikrofon braucht dieses Gerät die sichere Verbindung.</b> Einmalig einrichten:</p>
-            <ol>
-              <li><a href={certUrl}>QLMix-Zertifikat laden</a> → „Erlauben“.</li>
-              <li>Einstellungen → Allgemein → <i>VPN und Geräteverwaltung</i> → „QLMix Local CA“ → Installieren.</li>
-              <li>Einstellungen → Allgemein → Info → <i>Zertifikatsvertrauenseinstellungen</i> → „QLMix Local CA“ einschalten.</li>
-              <li>Dann diese Seite sicher öffnen:</li>
-            </ol>
-            {#if httpsUrl}<a class="pill lit link" href={httpsUrl}>Sicher öffnen (HTTPS)</a>{/if}
-          </div>
-        {:else}
-          <button class="pill wide" class:lit={measuringHere} onclick={toggleMeasure}>
-            {measuringHere ? "● Dieses Handy misst – tippen zum Beenden" : "Dieses Handy misst den Raum"}
-          </button>
-          {#if measureError}<p class="err">{measureError}</p>{/if}
-          <p class="small">Handy in die Mitte des Raums legen, Bildschirm an und QLMix im Vordergrund lassen.</p>
-        {/if}
-        {#if auto.measuring && !measuringHere}<p class="small">Ein anderes Gerät misst gerade.</p>{/if}
-
-        <div class="meter">
-          <div class="bar" style="width: {pct(st.room.level ?? localLevel)}%"></div>
-          {#if st.room.floor !== null}<div class="mark floor" style="left: {pct(st.room.floor)}%" title="Grundrauschen"></div>{/if}
-          {#if st.room.speech !== null}<div class="mark speech" style="left: {pct(st.room.speech)}%" title="Sprache"></div>{/if}
-          {#if st.room.target !== null}<div class="mark target" style="left: {pct(st.room.target)}%" title="Ziel"></div>{/if}
-        </div>
-        <div class="legend">
-          <span>Jetzt {fmt(st.room.level ?? localLevel)}</span>
-          <span class="s">Sprache {fmt(st.room.speech)}</span>
-          <span class="t">Ziel {fmt(st.room.target)}</span>
-          <span class="f">Ruhe {fmt(st.room.floor)}</span>
-        </div>
-        {#if st.feedback}<p class="err">Rückkopplung erkannt!</p>{/if}
+        <p class="hint t-footnote">{st.metersAvailable ? "Pegel am Pult über dem eigenen Grundrauschen. Der Strich ist die Schwelle." : "Ohne Pult-Pegel zählt nur das einzige offene Mikro."}</p>
       </section>
+    {/if}
 
-      <!-- 2 Target -->
-      <section>
-        <h3>2 · Ziel-Lautstärke</h3>
-        <button class="pill wide" class:lit={cfg.reference === null && st.room.speech !== null} onclick={() => store.autoAction("reference")}>So soll es klingen</button>
-        {#if store.autoError && store.autoErrorAction === "reference"}<p class="err">{store.autoError}</p>{/if}
-        {#if store.autoOk}<p class="okmsg">{store.autoOk}</p>{/if}
-        <p class="small">Während eine Person in normaler Lautstärke spricht und es im Raum gut klingt, drücken – das wird das Ziel.
-          {#if cfg.reference !== null}Aktuell: {cfg.reference.toFixed(1)} dB.{/if}</p>
+    <!-- 1 Measurement -->
+    <section>
+      <h3 class="step"><span class="stepn">1</span>Messung in der Raummitte</h3>
+      <div class="group">
+        {#if !RoomMeter.supported}
+          <p class="t-callout"><b>Für das Mikrofon braucht dieses Gerät die sichere Verbindung.</b> Einmalig einrichten:</p>
+          <ol class="steps">
+            <li><a href={certUrl}>QLMix-Zertifikat laden</a> und „Erlauben“ tippen.</li>
+            <li>Einstellungen → Allgemein → <i>VPN und Geräteverwaltung</i> → „QLMix Local CA“ → Installieren.</li>
+            <li>Einstellungen → Allgemein → Info → <i>Zertifikatsvertrauenseinstellungen</i> → „QLMix Local CA“ einschalten.</li>
+            <li>Dann diese Seite sicher öffnen.</li>
+          </ol>
+          {#if httpsUrl}<a class="pill primary wide" href={httpsUrl}><Icon name="lock" size={16} /> Sicher öffnen</a>{/if}
+        {:else}
+          <button class="pill wide" class:lit={measuringHere} aria-pressed={measuringHere} onclick={toggleMeasure}>
+            {measuringHere ? "Dieses Handy misst – tippen zum Beenden" : "Mit diesem Handy messen"}
+          </button>
+          {#if measureError}<p class="err" role="alert">{measureError}</p>{/if}
+        {/if}
+
+        <div class="meter" aria-hidden="true">
+          <div class="bar" style="width: {pct(st.room.level ?? localLevel)}%"></div>
+          {#if st.room.floor !== null}<div class="mark floor" style="left: {pct(st.room.floor)}%"></div>{/if}
+          {#if st.room.speech !== null}<div class="mark speech" style="left: {pct(st.room.speech)}%"></div>{/if}
+          {#if st.room.target !== null}<div class="mark target" style="left: {pct(st.room.target)}%"></div>{/if}
+        </div>
+        <dl class="legend num">
+          <div><dt>Jetzt</dt><dd>{fmt(st.room.level ?? localLevel)}</dd></div>
+          <div><dt><i class="k speech"></i>Sprache</dt><dd>{fmt(st.room.speech)}</dd></div>
+          <div><dt><i class="k target"></i>Ziel</dt><dd>{fmt(st.room.target)}</dd></div>
+          <div><dt><i class="k floor"></i>Ruhe</dt><dd>{fmt(st.room.floor)}</dd></div>
+        </dl>
+        {#if st.feedback}<p class="err" role="alert"><Icon name="warning" size={15} /> Rückkopplung erkannt</p>{/if}
+      </div>
+      <p class="hint t-footnote">
+        {#if auto.measuring && !measuringHere}Ein anderes Gerät misst gerade. {/if}
+        Handy in die Mitte des Raums legen, Bildschirm an und QLMix im Vordergrund lassen.
+      </p>
+    </section>
+
+    <!-- 2 Target -->
+    <section>
+      <h3 class="step"><span class="stepn">2</span>Ziel-Lautstärke</h3>
+      <div class="group">
+        <button class="pill wide" class:primary={cfg.reference === null && st.room.speech !== null} onclick={() => store.autoAction("reference")}>So soll es klingen</button>
+        {#if store.autoError && store.autoErrorAction === "reference"}<p class="err" role="alert">{store.autoError}</p>{/if}
+        {#if store.autoOk}<p class="okmsg"><Icon name="check" size={15} /> {store.autoOk}</p>{/if}
         <div class="ctrl">
-          <div class="lbl"><span>leiser</span><b>{cfg.offset > 0 ? "+" : ""}{cfg.offset.toFixed(1)} dB</b><span>lauter</span></div>
-          <input type="range" min="-10" max="10" step="0.5" value={cfg.offset}
+          <div class="lbl"><span>Leiser</span><b class="num">{cfg.offset > 0 ? "+" : ""}{cfg.offset.toFixed(1)} dB</b><span>Lauter</span></div>
+          <input type="range" min="-10" max="10" step="0.5" value={cfg.offset} aria-label="Ziel anpassen"
             onchange={(e) => store.autoAction("config", { offset: Number(e.currentTarget.value) })} />
         </div>
-      </section>
+      </div>
+      <p class="hint t-footnote">Drücken, während eine Person normal spricht und es im Raum gut klingt – das wird das Ziel.
+        {#if cfg.reference !== null}Aktuell {cfg.reference.toFixed(1)} dB.{/if}</p>
+    </section>
 
-      <!-- 3 Channels -->
-      <section>
-        <h3>3 · Sprecher-Mikrofone</h3>
-        <p class="small">Nur diese Kanäle darf die Automatik bewegen (z. B. Kanzel, Rednerpult, Funkmikros) – keine Instrumente oder Gesang.</p>
-        <div class="chgrid">
-          {#each inputs as c}
-            {@const sel = selected(c)}
-            {@const corr = st.corrections[`${c.kind}:${c.index}`]}
-            <button class="ch" class:sel class:active={st.activeKey === `${c.kind}:${c.index}`} onclick={() => toggleChannel(c)}>
-              <span class="n">{channelLabel(c)}</span>
-              <b>{name(c)}</b>
-              {#if sel && corr !== undefined}<span class="corr">{corr > 0 ? "+" : ""}{corr.toFixed(1)} dB</span>{/if}
-            </button>
-          {/each}
-        </div>
-      </section>
+    <!-- 3 Channels -->
+    <section>
+      <h3 class="step"><span class="stepn">3</span>Sprecher-Mikrofone</h3>
+      <div class="chgrid">
+        {#each inputs as c}
+          {@const sel = selected(c)}
+          {@const corr = st.corrections[`${c.kind}:${c.index}`]}
+          <button class="ch" class:sel class:active={st.activeKey === `${c.kind}:${c.index}`} aria-pressed={sel} onclick={() => toggleChannel(c)}>
+            <span class="n">{channelLabel(c)}</span>
+            <b>{name(c)}</b>
+            {#if sel && corr !== undefined}<span class="corr num">{corr > 0 ? "+" : ""}{corr.toFixed(1)} dB</span>{/if}
+          </button>
+        {/each}
+      </div>
+      <p class="hint t-footnote">Nur diese Kanäle darf die Automatik bewegen (z. B. Kanzel, Rednerpult, Funkmikros) – keine Instrumente oder Gesang.</p>
+    </section>
 
-      <!-- 4 Limits -->
-      <section>
-        <h3>4 · Grenzen</h3>
+    <!-- 4 Limits -->
+    <section>
+      <h3 class="step"><span class="stepn">4</span>Grenzen</h3>
+      <div class="group">
         <div class="ctrl">
-          <div class="lbl"><span>Max. anheben</span><b>+{cfg.maxBoost} dB</b></div>
-          <input type="range" min="0" max="12" step="1" value={cfg.maxBoost} onchange={(e) => store.autoAction("config", { maxBoost: Number(e.currentTarget.value) })} />
-        </div>
-        <div class="ctrl">
-          <div class="lbl"><span>Max. absenken</span><b>−{cfg.maxCut} dB</b></div>
-          <input type="range" min="0" max="20" step="1" value={cfg.maxCut} onchange={(e) => store.autoAction("config", { maxCut: Number(e.currentTarget.value) })} />
+          <div class="lbl"><span>Max. anheben</span><b class="num">+{cfg.maxBoost} dB</b></div>
+          <input type="range" min="0" max="12" step="1" value={cfg.maxBoost} aria-label="Maximal anheben" onchange={(e) => store.autoAction("config", { maxBoost: Number(e.currentTarget.value) })} />
         </div>
         <div class="ctrl">
-          <div class="lbl"><span>Fader nie über</span><b>{cfg.ceiling > 0 ? "+" : ""}{cfg.ceiling} dB</b></div>
-          <input type="range" min="-10" max="10" step="1" value={cfg.ceiling} onchange={(e) => store.autoAction("config", { ceiling: Number(e.currentTarget.value) })} />
+          <div class="lbl"><span>Max. absenken</span><b class="num">−{cfg.maxCut} dB</b></div>
+          <input type="range" min="0" max="20" step="1" value={cfg.maxCut} aria-label="Maximal absenken" onchange={(e) => store.autoAction("config", { maxCut: Number(e.currentTarget.value) })} />
         </div>
-        <div class="speeds">
-          {#each speeds as s}
-            <button class="pill" class:lit={cfg.speed === s.v} onclick={() => store.autoAction("config", { speed: s.v })}>{s.l}</button>
-          {/each}
+        <div class="ctrl">
+          <div class="lbl"><span>Fader nie über</span><b class="num">{cfg.ceiling > 0 ? "+" : ""}{cfg.ceiling} dB</b></div>
+          <input type="range" min="-10" max="10" step="1" value={cfg.ceiling} aria-label="Fader-Obergrenze" onchange={(e) => store.autoAction("config", { ceiling: Number(e.currentTarget.value) })} />
         </div>
-      </section>
+        <div class="ctrl">
+          <div class="lbl"><span>Tempo</span></div>
+          <div class="segmented" role="radiogroup" aria-label="Tempo">
+            {#each speeds as s}
+              <button role="radio" aria-checked={cfg.speed === s.v} class:sel={cfg.speed === s.v} onclick={() => store.autoAction("config", { speed: s.v })}>{s.l}</button>
+            {/each}
+          </div>
+        </div>
+      </div>
+    </section>
 
-      <p class="small">Die Automatik regelt nur, wenn ein ausgewähltes Mikro aktiv ist und gesprochen wird. Bei Musik bitte ausschalten.
-        Fader, die du selbst bewegst, lässt sie 20 Sekunden in Ruhe. Bei Rückkopplung wird sofort um 3 dB abgesenkt.</p>
-    {/if}
-  </div>
-</div>
+    <p class="t-footnote">Die Automatik regelt nur, wenn ein ausgewähltes Mikro aktiv ist und gesprochen wird. Bei Musik bitte ausschalten.
+      Fader, die du selbst bewegst, lässt sie 20 Sekunden in Ruhe. Bei Rückkopplung wird sofort um 3 dB abgesenkt.</p>
+  {/if}
+</Sheet>
 
 <style>
-  .backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); z-index: 20; }
-  .sheet {
-    position: fixed; z-index: 21; left: 50%; bottom: 0; translate: -50% 0;
-    width: min(640px, 100%); max-height: 94dvh; display: flex; flex-direction: column;
-    background: #15181d; border-radius: 18px 18px 0 0; border: 1px solid rgba(255, 255, 255, 0.08);
-    padding-bottom: env(safe-area-inset-bottom);
+  .hero { display: flex; flex-direction: column; gap: var(--s3); }
+  .status { display: flex; gap: var(--s3); align-items: flex-start; }
+  .stext { display: flex; flex-direction: column; gap: 2px; }
+  .sdot { width: 10px; height: 10px; border-radius: 50%; margin-top: 6px; flex: none; background: var(--label-3); }
+  .status.ok .sdot { background: var(--on); box-shadow: 0 0 0 4px rgba(48, 209, 88, 0.18); }
+  .status.warn .sdot { background: var(--warn); box-shadow: 0 0 0 4px rgba(255, 179, 64, 0.16); }
+  .cta { min-height: 52px; font-size: var(--fs-headline); }
+  .todo {
+    padding: var(--s3) var(--s4);
+    border-radius: var(--r-sm);
+    background: rgba(255, 179, 64, 0.08);
+    box-shadow: inset 0 0 0 1px rgba(255, 179, 64, 0.28);
+    font-size: var(--fs-callout);
+    line-height: 20px;
   }
-  header { display: flex; align-items: center; justify-content: space-between; padding: 14px 14px 6px; }
-  h2 { margin: 0; font-size: 18px; display: flex; align-items: center; gap: 8px; }
-  .badge { font-size: 11px; background: #ff9f0a; color: #241400; border-radius: 6px; padding: 2px 6px; }
-  h3 { margin: 0 0 8px; font-size: 14px; }
-  .icon { width: 36px; height: 36px; border-radius: 10px; background: #23272e; }
-  .body { overflow-y: auto; padding: 6px 14px 22px; }
-  section { margin: 18px 0; display: flex; flex-direction: column; gap: 8px; }
-  .status { display: flex; gap: 10px; align-items: flex-start; background: #1d2127; border-radius: 12px; padding: 10px 12px; }
-  .status div { display: flex; flex-direction: column; gap: 2px; }
-  .status small { color: var(--muted); }
-  .status .dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; flex: none; background: #8b929c; }
-  .status.ok .dot { background: #34c759; }
-  .status.warn .dot { background: #ff9f0a; }
-  .big { width: 100%; height: 54px; border-radius: 14px; font-size: 17px; font-weight: 800; margin-top: 10px; }
-  .big.start { background: #34c759; color: #06260f; }
-  .big.stop { background: #ff453a; color: #fff; }
-  .big.start.notready { opacity: 0.6; }
-  .todo { margin-top: 8px; background: #2a2210; border: 1px solid #ffb34055; border-radius: 10px; padding: 8px 12px; font-size: 13px; }
-  .todo ul { margin: 4px 0 0; padding-left: 18px; }
-  .okmsg { color: #34c759; font-size: 13px; margin: 0; }
-  .pill.wide { width: 100%; height: 44px; }
-  .link { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
-  .box { background: #1d2127; border-radius: 12px; padding: 10px 12px; font-size: 13px; line-height: 1.45; }
-  .box ol { margin: 6px 0 10px; padding-left: 20px; }
-  .box a { color: #6fd8ff; }
-  .box a.link { color: #06260f; margin-top: 4px; }
-  .err { color: #ff6b5e; font-size: 13px; margin: 6px 0 0; }
-  .small, .note { color: var(--muted); font-size: 12px; line-height: 1.45; margin: 0; }
-  .meter { position: relative; height: 16px; border-radius: 8px; background: #0b0d10; overflow: hidden; }
-  .bar { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #2f7d4a, #34c759); transition: width 0.15s linear; }
-  .mark { position: absolute; top: 0; bottom: 0; width: 3px; margin-left: -1px; }
-  .mark.floor { background: #8b929c; }
-  .mark.speech { background: #6fd8ff; }
-  .mark.target { background: #ffd60a; width: 4px; }
-  .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; font-variant-numeric: tabular-nums; }
-  .legend .s { color: #6fd8ff; } .legend .t { color: #ffd60a; } .legend .f { color: var(--muted); }
-  .ctrl { display: flex; flex-direction: column; }
-  .lbl { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); }
-  .lbl b { color: var(--text); font-variant-numeric: tabular-nums; }
-  .chgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 6px; }
-  .ch { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 6px 8px; border-radius: 9px; background: #1d2127; border: 1px solid transparent; text-align: left; }
-  .ch .n { font-size: 10px; color: var(--muted); }
-  .ch b { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-  .ch.sel { border-color: #34c759; background: #18291d; }
-  .ch.active { box-shadow: 0 0 0 2px #ffd60a; }
-  .ch .corr { font-size: 11px; color: #ffd60a; font-variant-numeric: tabular-nums; }
-  .speeds { display: flex; gap: 8px; }
-  .mics { margin-top: 12px; background: #1b1f25; border-radius: 12px; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; }
-  .micshead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 13px; }
-  .micshead small { color: var(--muted); font-size: 11px; text-align: right; }
-  .mic { display: grid; grid-template-columns: 90px 1fr 70px; align-items: center; gap: 8px; font-size: 13px; }
-  .mic.active .mname { color: #ffd60a; font-weight: 700; }
+  .todo-title { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--warn); }
+  .todo ul { margin: var(--s1) 0 0; padding-left: 20px; color: var(--label); }
+  .err { display: flex; align-items: center; gap: 6px; color: var(--danger-text); font-size: var(--fs-footnote); line-height: 18px; }
+  .okmsg { display: flex; align-items: center; gap: 6px; color: var(--on); font-size: var(--fs-footnote); }
+  .hint { padding: var(--s2) var(--s1) 0; }
+
+  .step { display: flex; align-items: center; gap: var(--s2); font: 600 var(--fs-headline) / 22px var(--font); margin-bottom: var(--s3); }
+  .stepn {
+    display: inline-grid; place-items: center;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--surface-3); color: var(--label-2);
+    font-size: var(--fs-caption); font-weight: 700;
+  }
+
+  .steps { margin: 0; padding-left: 20px; font-size: var(--fs-callout); line-height: 22px; display: flex; flex-direction: column; gap: var(--s1); }
+
+  .meter { position: relative; height: 12px; border-radius: 6px; background: var(--sunken); overflow: hidden; margin-top: var(--s1); }
+  .bar { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #248a3d, var(--on)); transition: width 0.15s linear; }
+  .mark { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; }
+  .mark.floor, .k.floor { background: var(--label-3); }
+  .mark.speech, .k.speech { background: var(--info); }
+  .mark.target, .k.target { background: var(--label); }
+  .mark.target { width: 3px; }
+  .legend { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--s2); margin: 0; }
+  .legend div { display: flex; flex-direction: column; gap: 2px; }
+  .legend dt { display: flex; align-items: center; gap: 6px; font-size: var(--fs-caption); color: var(--label-2); }
+  .legend dd { margin: 0; font-size: var(--fs-callout); font-weight: 600; }
+  .k { width: 8px; height: 8px; border-radius: 2px; }
+
+  .ctrl { display: flex; flex-direction: column; gap: var(--s1); }
+  .lbl { display: flex; justify-content: space-between; font-size: var(--fs-footnote); color: var(--label-2); }
+  .lbl b { color: var(--label); font-weight: 600; }
+
+  .chgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: var(--s2); }
+  .ch {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+    min-height: 56px; padding: var(--s2) var(--s3);
+    border-radius: var(--r-sm);
+    background: var(--surface-1);
+    text-align: left;
+    transition: background-color 120ms var(--ease), box-shadow 120ms var(--ease);
+  }
+  .ch:hover { background: var(--surface-2); }
+  .ch .n { font-size: var(--fs-caption2); font-weight: 600; color: var(--label-2); }
+  .ch b { font-size: var(--fs-footnote); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .ch.sel { background: rgba(0, 113, 227, 0.18); box-shadow: inset 0 0 0 1.5px var(--accent-text); }
+  .ch.sel .n { color: var(--accent-text); }
+  .ch.active { box-shadow: inset 0 0 0 1.5px var(--accent-text), 0 0 0 3px rgba(48, 209, 88, 0.55); }
+  .ch .corr { font-size: var(--fs-caption); color: var(--label-2); }
+
+  .mics { gap: var(--s2); }
+  .mic { display: grid; grid-template-columns: minmax(70px, 110px) 1fr 72px; align-items: center; gap: var(--s3); font-size: var(--fs-callout); min-height: 28px; }
+  .mic.active .mname { color: var(--on); font-weight: 600; }
   .mname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .mbar { position: relative; height: 8px; border-radius: 4px; background: #0b0d10; overflow: hidden; }
-  .mfill { position: absolute; inset: 0 auto 0 0; background: #4b5563; transition: width 0.1s linear; }
-  .mic.speaking .mfill { background: #34c759; }
-  .mfloor { position: absolute; top: 0; bottom: 0; width: 2px; background: #ffd60a; }
-  .mstate { text-align: right; font-size: 12px; }
-  .mstate em { font-style: normal; color: var(--muted); }
-  .mstate em.ok { color: #34c759; font-weight: 700; }
-  .mstate em.warn { color: #ff9f0a; font-weight: 700; }
-  .speeds .pill { flex: 1; }
+  .mbar { position: relative; height: 6px; border-radius: 3px; background: var(--sunken); overflow: hidden; }
+  .mfill { position: absolute; inset: 0 auto 0 0; background: var(--surface-3); transition: width 0.1s linear; }
+  .mic.speaking .mfill { background: var(--on); }
+  .mfloor { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--label); }
+  .mstate { text-align: right; font-size: var(--fs-footnote); }
+  .mstate em { font-style: normal; color: var(--label-2); }
+  .mstate em.ok { color: var(--on); font-weight: 600; }
+  .mstate em.warn { color: var(--warn); font-weight: 600; }
+
+  @media (max-width: 430px) {
+    .legend { grid-template-columns: repeat(2, 1fr); row-gap: var(--s3); }
+  }
 </style>

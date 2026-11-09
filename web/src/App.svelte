@@ -8,6 +8,7 @@
   import SettingsSheet from "./lib/SettingsSheet.svelte";
   import RackSheet from "./lib/RackSheet.svelte";
   import AutoSheet from "./lib/AutoSheet.svelte";
+  import Icon from "./lib/Icon.svelte";
 
   // ?mix=3 → locked to monitor mix 3 (for musicians)
   const params = new URLSearchParams(location.search);
@@ -92,47 +93,60 @@
 <svelte:window bind:innerWidth={width} />
 
 <div class="app">
-  <header class="top">
-    <button class="status" onclick={() => { if (lockedMix === null) settings = true; }}>
+  <header class="toolbar">
+    <button class="status" onclick={() => { if (lockedMix === null) settings = true; }} aria-label="Verbindung: {statusText}">
       <span class="dot {statusClass}"></span>
       <span class="statustext">{statusText}</span>
+      {#if store.info?.scene !== undefined}
+        <span class="scene num">Szene {String(store.info.scene).padStart(3, "0")}</span>
+      {/if}
       {#if store.info?.syncing}<span class="sync">lädt …</span>{/if}
     </button>
-    <span class="spacer"></span>
-    {#if store.info?.scene !== undefined}
-      <span class="scene">Szene <b>{String(store.info.scene).padStart(3, "0")}</b></span>
+
+    {#if lockedMix === null && wide}
+      <div class="segmented modes" role="tablist" aria-label="Ansicht">
+        <button role="tab" aria-selected={mode === "main"} class:sel={mode === "main"} onclick={() => (mode = "main")}>Mischen</button>
+        <button role="tab" aria-selected={mode === "monitor"} class:sel={mode === "monitor"} onclick={() => (mode = "monitor")}>Monitor</button>
+      </div>
     {/if}
-    {#if lockedMix === null}
-      <button class="icon rackbtn" class:autoon={store.auto?.status.enabled} onclick={() => (autoOpen = true)} aria-label="Raum-Automatik">Auto</button>
-      {#if store.eqSchema?.kind === "ql"}
-        <button class="icon rackbtn" onclick={() => (rack = true)} aria-label="Premium Rack">Rack</button>
+
+    <div class="tools">
+      {#if lockedMix === null}
+        <button class="tool" class:auto-on={store.auto?.status.enabled} onclick={() => (autoOpen = true)} aria-label="Raum-Automatik">
+          <Icon name="wave" size={16} /><span>Auto</span>
+        </button>
+        {#if store.eqSchema?.kind === "ql"}
+          <button class="tool" onclick={() => (rack = true)} aria-label="Premium Rack"><Icon name="rack" size={16} /><span>Rack</span></button>
+        {/if}
+        <button class="icon-btn" onclick={() => (settings = true)} aria-label="Einstellungen"><Icon name="gear" /></button>
       {/if}
-      <button class="icon" onclick={() => (settings = true)} aria-label="Einstellungen">⚙︎</button>
-    {/if}
+    </div>
   </header>
 
-  {#if lockedMix === null}
-    <nav class="modes">
-      <button class:sel={mode === "main"} onclick={() => (mode = "main")}>Mischen</button>
-      <button class:sel={mode === "monitor"} onclick={() => (mode = "monitor")}>Monitor</button>
-    </nav>
+  {#if lockedMix === null && !wide}
+    <div class="row">
+      <div class="segmented" role="tablist" aria-label="Ansicht">
+        <button role="tab" aria-selected={mode === "main"} class:sel={mode === "main"} onclick={() => (mode = "main")}>Mischen</button>
+        <button role="tab" aria-selected={mode === "monitor"} class:sel={mode === "monitor"} onclick={() => (mode = "monitor")}>Monitor</button>
+      </div>
+    </div>
   {/if}
 
   {#if mode === "monitor" && model}
-    <div class="chips mixes">
+    <div class="chips" role="tablist" aria-label="Monitormix">
       {#if lockedMix !== null}
-        <span class="locked">Dein Mix: <b>{mixName(mix)}</b></span>
+        <span class="locked"><Icon name="lock" size={14} /> Dein Mix <b>{mixName(mix)}</b></span>
       {:else}
         {#each Array.from({ length: model.counts.mix }, (_, i) => i) as i}
-          <button class="chip" class:sel={mix === i} onclick={() => (mix = i)}>{mixName(i)}</button>
+          <button class="chip send" role="tab" aria-selected={mix === i} class:sel={mix === i} onclick={() => (mix = i)}>{mixName(i)}</button>
         {/each}
       {/if}
     </div>
   {/if}
 
-  <div class="chips banks">
+  <div class="chips" role="tablist" aria-label="Kanalbank">
     {#each banks as b (b.id)}
-      <button class="chip" class:sel={current?.id === b.id} onclick={() => (bank = b.id)}>{b.label}</button>
+      <button class="chip" role="tab" aria-selected={current?.id === b.id} class:sel={current?.id === b.id} onclick={() => (bank = b.id)}>{b.label}</button>
     {/each}
   </div>
 
@@ -155,13 +169,18 @@
 
   {#if !model}
     <div class="empty">
+      <span class="dot {statusClass}"></span>
       <p>{store.socket === "open" ? "Warte auf Pult …" : "Verbinde mit QLMix-Server …"}</p>
     </div>
   {:else if store.socket === "open" && store.info && store.info.status !== "connected"}
-    <div class="banner" onclick={() => { if (lockedMix === null) settings = true; }} role="presentation">
-      <b>{store.info.status === "reconnecting" || store.info.status === "connecting" ? "Verbinde mit Pult …" : "Pult nicht verbunden"}</b>
-      <span>{store.info.reason ?? `Pult-IP: ${store.info.host}`} – tippen für Einstellungen</span>
-    </div>
+    <button class="banner" onclick={() => { if (lockedMix === null) settings = true; }}>
+      <span class="banner-icon"><Icon name="warning" size={18} /></span>
+      <span class="banner-text">
+        <b>{store.info.status === "reconnecting" || store.info.status === "connecting" ? "Verbinde mit Pult …" : "Pult nicht verbunden"}</b>
+        <span>{store.info.reason ?? `Pult-IP ${store.info.host}`}</span>
+      </span>
+      {#if lockedMix === null}<span class="banner-go"><Icon name="forward" size={16} /></span>{/if}
+    </button>
   {/if}
 </div>
 
@@ -181,11 +200,12 @@
 {#if store.needPin}
   <div class="pin">
     <form onsubmit={(e) => { e.preventDefault(); store.login(pin); }}>
-      <h2>QLMix</h2>
-      <p>PIN eingeben</p>
-      <input type="password" inputmode="numeric" bind:value={pin} autocomplete="off" />
-      {#if store.pinError}<p class="err">Falsche PIN</p>{/if}
-      <button class="pill lit" type="submit">Weiter</button>
+      <span class="pin-icon"><Icon name="lock" size={28} /></span>
+      <h1 class="t-title">QLMix</h1>
+      <p class="t-footnote">Bitte die PIN eingeben, um das Pult zu steuern.</p>
+      <input type="password" inputmode="numeric" bind:value={pin} autocomplete="off" aria-label="PIN" />
+      {#if store.pinError}<p class="err">Die PIN stimmt nicht.</p>{/if}
+      <button class="pill primary big" type="submit">Weiter</button>
     </form>
   </div>
 {/if}
@@ -197,48 +217,157 @@
     flex-direction: column;
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
-  .top { display: flex; align-items: center; gap: 10px; padding: 8px 12px 6px; }
-  .status { display: flex; align-items: center; gap: 8px; min-width: 0; font-weight: 600; font-size: 14px; }
-  .statustext { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .sync { font-size: 12px; color: var(--muted); font-weight: 500; }
-  .spacer { flex: 1; }
-  .scene { font-size: 13px; color: var(--muted); white-space: nowrap; }
-  .scene b { color: #6fd8ff; font-variant-numeric: tabular-nums; font-size: 15px; }
-  .icon { width: 38px; height: 38px; border-radius: 10px; background: #1d2026; font-size: 18px; }
-  .icon.rackbtn { width: auto; padding: 0 10px; font-size: 13px; font-weight: 700; }
-  .icon.rackbtn.autoon { background: #34c759; color: #06260f; }
-  .modes { display: flex; margin: 2px 12px 6px; background: #0e1013; border-radius: 11px; padding: 3px; }
-  .modes button { flex: 1; height: 34px; border-radius: 9px; font-weight: 700; color: var(--muted); }
-  .modes button.sel { background: #2a2f37; color: var(--text); }
-  .chips { display: flex; gap: 6px; padding: 2px 12px 8px; overflow-x: auto; scrollbar-width: none; flex: none; }
+
+  /* toolbar */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: var(--s3);
+    min-height: 56px;
+    padding: var(--s2) var(--s4);
+  }
+  .status {
+    display: flex;
+    align-items: center;
+    gap: var(--s2);
+    min-width: 0;
+    flex: 1;
+    text-align: left;
+    padding: var(--s2) 0;
+  }
+  .statustext {
+    font-size: var(--fs-headline);
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .scene {
+    font-size: var(--fs-footnote);
+    color: var(--label-2);
+    white-space: nowrap;
+    padding-left: var(--s2);
+    border-left: 1px solid var(--hairline);
+    margin-left: var(--s1);
+  }
+  .sync { font-size: var(--fs-footnote); color: var(--label-3); }
+  .modes { width: 240px; flex: none; }
+  .tools { display: flex; align-items: center; gap: var(--s2); flex: none; }
+  .tool {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: var(--h-compact);
+    padding: 0 var(--s3);
+    border-radius: var(--r-full);
+    background: var(--surface-2);
+    color: var(--label);
+    font-size: var(--fs-footnote);
+    font-weight: 600;
+    transition: background-color 120ms var(--ease);
+  }
+  .tool:hover { background: var(--surface-3); }
+  .tool :global(svg) { color: var(--label-2); }
+  .tool.auto-on { background: var(--on); color: var(--on-ink); }
+  .tool.auto-on :global(svg) { color: var(--on-ink); }
+
+  .row { padding: 0 var(--s4) var(--s2); }
+
+  /* chips */
+  .chips {
+    display: flex;
+    gap: var(--s2);
+    padding: 0 var(--s4) var(--s3);
+    overflow-x: auto;
+    scrollbar-width: none;
+    flex: none;
+  }
   .chips::-webkit-scrollbar { display: none; }
   .chip {
-    flex: none; height: 32px; padding: 0 12px; border-radius: 16px; background: #1d2026;
-    font-size: 13px; font-weight: 700; color: var(--muted); white-space: nowrap;
+    flex: none;
+    min-height: var(--h-compact);
+    padding: 0 var(--s4);
+    border-radius: var(--r-full);
+    background: var(--surface-1);
+    box-shadow: inset 0 0 0 1px var(--separator);
+    color: var(--label-2);
+    font-size: var(--fs-footnote);
+    font-weight: 600;
+    white-space: nowrap;
+    transition: background-color 120ms var(--ease), color 120ms;
   }
-  .chip.sel { background: #e8eaed; color: #111; }
-  .mixes .chip.sel { background: #ff9f0a; color: #241400; }
-  .locked { font-size: 14px; color: var(--muted); padding: 6px 0; }
-  .locked b { color: #ff9f0a; }
-  .mixer { flex: 1; min-height: 0; display: flex; gap: 6px; padding: 0 8px 8px; }
-  .mixer.dim { opacity: 0.55; }
+  .chip:hover { color: var(--label); }
+  .chip.sel { background: var(--label); color: #0b0c0f; box-shadow: none; }
+  .chip.send.sel { background: var(--send); color: var(--send-ink); }
+  .locked { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-callout); color: var(--label-2); min-height: var(--h-compact); }
+  .locked b { color: var(--send); }
+
+  /* mixer */
+  .mixer { flex: 1; min-height: 0; display: flex; gap: var(--strip-gap); padding: 0 var(--s2) var(--s2); }
+  .mixer.dim { filter: saturate(0.4); pointer-events: none; }
   .strips {
-    flex: 1; min-width: 0; display: flex; gap: 5px; overflow-x: auto; overflow-y: hidden;
-    scroll-snap-type: x proximity; overscroll-behavior-x: contain; padding-bottom: 2px;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    gap: var(--strip-gap);
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x proximity;
+    overscroll-behavior-x: contain;
+    padding: 0 var(--s2) 2px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--surface-3) transparent;
   }
-  .masters { display: flex; gap: 5px; padding-left: 6px; border-left: 1px solid rgba(255, 255, 255, 0.08); }
-  .empty { position: fixed; inset: 0; display: grid; place-items: center; color: var(--muted); pointer-events: none; }
+  .masters {
+    display: flex;
+    gap: var(--strip-gap);
+    padding-left: var(--s2);
+    margin-left: var(--s1);
+    box-shadow: inset 1px 0 0 var(--separator);
+  }
+
+  .empty {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--s2);
+    color: var(--label-2);
+    font-size: var(--fs-callout);
+    pointer-events: none;
+  }
+
+  /* connection banner */
   .banner {
-    position: fixed; left: 50%; translate: -50% 0; bottom: calc(18px + env(safe-area-inset-bottom));
-    width: min(420px, calc(100% - 24px)); display: flex; flex-direction: column; gap: 2px;
-    padding: 12px 14px; border-radius: 14px; background: #2b1a14ee; border: 1px solid #ff6b3d55;
-    font-size: 13px; backdrop-filter: blur(10px);
+    position: fixed;
+    left: 50%;
+    translate: -50% 0;
+    bottom: calc(var(--s5) + env(safe-area-inset-bottom));
+    width: min(440px, calc(100% - 2 * var(--s4)));
+    display: flex;
+    align-items: center;
+    gap: var(--s3);
+    padding: var(--s3) var(--s4);
+    border-radius: var(--r-md);
+    background: rgba(28, 31, 38, 0.92);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), inset 0 0 0 0.5px var(--hairline);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    text-align: left;
+    z-index: 10;
   }
-  .banner span { color: var(--muted); }
-  .pin { position: fixed; inset: 0; z-index: 40; background: #0d0f12; display: grid; place-items: center; }
-  .pin form { display: flex; flex-direction: column; gap: 12px; width: min(280px, 80vw); text-align: center; }
-  .pin h2 { margin: 0; }
-  .pin p { margin: 0; color: var(--muted); }
-  .pin .err { color: #ff453a; }
-  .pin input { text-align: center; font-size: 22px; letter-spacing: 0.3em; }
+  .banner-icon { color: var(--warn); display: grid; }
+  .banner-text { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .banner-text b { font-size: var(--fs-callout); }
+  .banner-text span { font-size: var(--fs-footnote); color: var(--label-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .banner-go { color: var(--label-3); display: grid; }
+
+  /* PIN */
+  .pin { position: fixed; inset: 0; z-index: 40; background: var(--bg); display: grid; place-items: center; padding: var(--s6); }
+  .pin form { display: flex; flex-direction: column; align-items: center; gap: var(--s3); width: min(320px, 100%); text-align: center; }
+  .pin-icon { width: 56px; height: 56px; border-radius: var(--r-md); background: var(--surface-2); display: grid; place-items: center; color: var(--label-2); margin-bottom: var(--s2); }
+  .pin input { width: 100%; text-align: center; font-size: 24px; letter-spacing: 0.4em; margin-top: var(--s2); }
+  .pin .pill { width: 100%; margin-top: var(--s2); }
+  .err { color: var(--danger-text); font-size: var(--fs-footnote); }
 </style>

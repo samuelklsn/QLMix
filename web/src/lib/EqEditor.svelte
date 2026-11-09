@@ -37,17 +37,18 @@
     g.clearRect(0, 0, w, h);
 
     g.lineWidth = 1;
-    g.font = "10px -apple-system, system-ui, sans-serif";
+    // Grid labels: 11 px, #8a9099 on #07080a ≈ 6:1 (typography.md minimum 11 pt, 4.5:1 contrast).
+    g.font = "500 11px -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
+    const LABEL = "#8a9099";
     for (const f of [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000]) {
-      g.strokeStyle = "rgba(255,255,255,0.08)";
-      g.beginPath(); g.moveTo(x(f), 0); g.lineTo(x(f), h); g.stroke();
-      g.fillStyle = "rgba(255,255,255,0.35)";
-      g.fillText(f >= 1000 ? `${f / 1000}k` : `${f}`, x(f) + 3, h - 5);
+      g.strokeStyle = f === 100 || f === 1000 || f === 10000 ? "rgba(255,255,255,0.09)" : "rgba(255,255,255,0.05)";
+      g.beginPath(); g.moveTo(x(f) + 0.5, 0); g.lineTo(x(f) + 0.5, h); g.stroke();
+      if (f > 20) { g.fillStyle = LABEL; g.fillText(f >= 1000 ? `${f / 1000}k` : `${f}`, x(f) + 4, h - 6); }
     }
     for (let db = -12; db <= 12; db += 6) {
-      g.strokeStyle = db === 0 ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.07)";
-      g.beginPath(); g.moveTo(0, y(db)); g.lineTo(w, y(db)); g.stroke();
-      if (db !== 0) { g.fillStyle = "rgba(255,255,255,0.35)"; g.fillText(`${db > 0 ? "+" : ""}${db}`, 4, y(db) - 3); }
+      g.strokeStyle = db === 0 ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.05)";
+      g.beginPath(); g.moveTo(0, Math.round(y(db)) + 0.5); g.lineTo(w, Math.round(y(db)) + 0.5); g.stroke();
+      if (db !== 0) { g.fillStyle = LABEL; g.fillText(`${db > 0 ? "+" : ""}${db}`, 6, y(db) - 4); }
     }
 
     const curve = (fn: (f: number) => number) => {
@@ -64,21 +65,21 @@
       g.fillStyle = BAND_COLORS[selected] + "38";
       g.fill();
     }
-    const color = eq.on ? "#6fd8ff" : "#8a8f98";
+    const color = eq.on ? "#64d2ff" : "#7d838d";
     curve((f) => eqResponse(eq, f));
     g.lineWidth = 2.5;
     g.strokeStyle = color;
     g.stroke();
     g.lineTo(w, y(0)); g.lineTo(0, y(0)); g.closePath();
-    g.fillStyle = eq.on ? "rgba(111,216,255,0.10)" : "rgba(138,143,152,0.08)";
+    g.fillStyle = eq.on ? "rgba(100,210,255,0.09)" : "rgba(125,131,141,0.07)";
     g.fill();
 
     const node = (px: number, py: number, label: string, fill: string, sel: boolean, dim: boolean) => {
       g.globalAlpha = dim ? 0.45 : 1;
       g.beginPath(); g.arc(px, py, sel ? 13 : 11, 0, Math.PI * 2);
       g.fillStyle = fill; g.fill();
-      if (sel) { g.lineWidth = 2.5; g.strokeStyle = "#fff"; g.stroke(); }
-      g.fillStyle = "#111"; g.font = "bold 11px -apple-system, system-ui, sans-serif";
+      if (sel) { g.lineWidth = 2.5; g.strokeStyle = "#f2f3f5"; g.stroke(); }
+      g.fillStyle = "#111"; g.font = "700 11px -apple-system, BlinkMacSystemFont, system-ui, sans-serif";
       g.textAlign = "center"; g.textBaseline = "middle";
       g.fillText(label, px, py + 0.5);
       g.textAlign = "start"; g.textBaseline = "alphabetic";
@@ -162,24 +163,24 @@
 {#if eq}
   <div class="eq">
     <div class="toprow">
-      <button class="pill" class:lit={eq.on} onclick={() => update([{ p: "on" }], (e) => (e.on = !e.on), true)}>EQ ON</button>
+      <button class="pill" class:lit={eq.on} aria-pressed={eq.on} onclick={() => update([{ p: "on" }], (e) => (e.on = !e.on), true)}>EQ {eq.on ? "an" : "aus"}</button>
       {#if withHpf}
-        <button class="pill hpf" class:lit={eq.hpfOn} onclick={() => update([{ p: "hpfOn" }], (e) => (e.hpfOn = !e.hpfOn), true)}>HPF</button>
+        <button class="pill" class:lit={eq.hpfOn} aria-pressed={eq.hpfOn} onclick={() => update([{ p: "hpfOn" }], (e) => (e.hpfOn = !e.hpfOn), true)}>HPF {eq.hpfOn ? "an" : "aus"}</button>
       {/if}
       <span class="spacer"></span>
-      <button class="pill ghost" onclick={() => update(Array.from({ length: EQ_BANDS }, (_, band) => ({ p: "gain", band }) as EqParam), (e) => e.bands.forEach((b) => (b.gain = 0)), true)}>Flat</button>
+      <button class="pill ghost" aria-label="Alle Bänder auf 0 dB" onclick={() => update(Array.from({ length: EQ_BANDS }, (_, band) => ({ p: "gain", band }) as EqParam), (e) => e.bands.forEach((b) => (b.gain = 0)), true)}>Flat</button>
     </div>
 
     <div class="graph" bind:clientWidth={w} bind:clientHeight={h}>
       <canvas bind:this={canvas} style="width: {w}px; height: {h}px" onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up}></canvas>
     </div>
 
-    <div class="tabs">
+    <div class="segmented tabs" role="tablist" aria-label="Band">
       {#each BAND_NAMES as name, i}
-        <button class="tab" class:sel={selected === i} style="--c: {BAND_COLORS[i]}" onclick={() => (selected = i)}>{name}</button>
+        <button role="tab" aria-selected={selected === i} class:sel={selected === i} style="--c: {BAND_COLORS[i]}" onclick={() => (selected = i)}><i class="swatch"></i>{name}</button>
       {/each}
       {#if withHpf}
-        <button class="tab" class:sel={selected === "hpf"} style="--c: #e6e8eb" onclick={() => (selected = "hpf")}>HPF</button>
+        <button role="tab" aria-selected={selected === "hpf"} class:sel={selected === "hpf"} style="--c: #e6e8eb" onclick={() => (selected = "hpf")}><i class="swatch"></i>HPF</button>
       {/if}
     </div>
 
@@ -194,9 +195,11 @@
       {@const band = selected}
       {#if band === 0 || band === EQ_BANDS - 1}
         <div class="shape">
-          <button class="pill" class:lit={bandShape(eq, band) === "bell"} onclick={() => update([{ p: band === 0 ? "lowShelf" : "highShelf" }], (e) => (band === 0 ? (e.lowShelf = false) : (e.highShelf = false)), true)}>Bell</button>
-          <button class="pill" class:lit={bandShape(eq, band) === "lowShelf" || bandShape(eq, band) === "highShelf"} onclick={() => update([{ p: band === 0 ? "lowShelf" : "highShelf" }], (e) => { if (band === 0) e.lowShelf = true; else { e.highShelf = true; e.highLpf = false; } }, true)}>Shelf</button>
-          {#if band === EQ_BANDS - 1 && eq.highLpf}<span class="pill lit">LPF</span>{/if}
+          <div class="segmented" role="radiogroup" aria-label="Filterform">
+          <button role="radio" aria-checked={bandShape(eq, band) === "bell"} class:sel={bandShape(eq, band) === "bell"} onclick={() => update([{ p: band === 0 ? "lowShelf" : "highShelf" }], (e) => (band === 0 ? (e.lowShelf = false) : (e.highShelf = false)), true)}>Bell</button>
+          <button role="radio" aria-checked={bandShape(eq, band) !== "bell"} class:sel={bandShape(eq, band) === "lowShelf" || bandShape(eq, band) === "highShelf"} onclick={() => update([{ p: band === 0 ? "lowShelf" : "highShelf" }], (e) => { if (band === 0) e.lowShelf = true; else { e.highShelf = true; e.highLpf = false; } }, true)}>Shelf</button>
+          </div>
+          {#if band === EQ_BANDS - 1 && eq.highLpf}<span class="tag">LPF</span>{/if}
         </div>
       {/if}
       <div class="ctrl">
@@ -214,43 +217,38 @@
           <div class="lbl"><span>Q</span><b>{qText(b.q)}</b></div>
           <input type="range" min="0" max="1000" value={1000 - toLog(b.q, EQ_RANGE.q)} {...touchKeys([{ p: "q", band }])}
             oninput={(ev) => update([{ p: "q", band }], (e) => (e.bands[band].q = fromLog(1000 - +ev.currentTarget.value, EQ_RANGE.q)))} />
-          <div class="lbl small"><span>breit</span><span>schmal</span></div>
+          <div class="lbl small"><span>Breit</span><span>Schmal</span></div>
         </div>
       {/if}
     {/if}
-    <p class="hint">Punkte in der Kurve ziehen: links/rechts = Frequenz, hoch/runter = Gain.</p>
+    <p class="t-footnote">Punkte in der Kurve ziehen: links/rechts = Frequenz, hoch/runter = Gain.</p>
   </div>
 {/if}
 
 <style>
-  .eq { display: flex; flex-direction: column; gap: 12px; }
-  .toprow, .shape { display: flex; gap: 8px; align-items: center; }
+  .eq { display: flex; flex-direction: column; gap: var(--s4); }
+  .toprow, .shape { display: flex; gap: var(--s2); align-items: center; }
+  .shape .segmented { flex: 1; max-width: 240px; }
   .spacer { flex: 1; }
   .graph {
-    height: clamp(180px, 34vh, 320px);
-    border-radius: 12px;
-    background: #07080a;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    height: clamp(200px, 34vh, 340px);
+    border-radius: var(--r-md);
+    background: var(--sunken);
+    box-shadow: inset 0 0 0 1px var(--separator);
     overflow: hidden;
     touch-action: none;
   }
   canvas { display: block; touch-action: none; }
-  .tabs { display: flex; gap: 6px; overflow-x: auto; }
-  .tab {
-    flex: 1;
-    min-width: 58px;
-    height: 34px;
-    border-radius: 8px;
-    font-size: 12px;
-    font-weight: 700;
-    background: #1f2329;
-    color: var(--c);
-    border: 1px solid transparent;
+  .tabs { overflow-x: auto; scrollbar-width: none; }
+  .tabs > button { min-width: 64px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: var(--fs-caption); letter-spacing: 0.02em; }
+  .swatch { width: 8px; height: 8px; border-radius: 50%; background: var(--c); flex: none; }
+  .tag {
+    font-size: var(--fs-caption); font-weight: 700; letter-spacing: 0.02em;
+    padding: 6px var(--s2); border-radius: var(--r-xs);
+    background: var(--surface-2); color: var(--label-2);
   }
-  .tab.sel { border-color: var(--c); background: #262b33; }
-  .ctrl { display: flex; flex-direction: column; gap: 4px; }
-  .ctrl .lbl { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); }
-  .ctrl b { color: var(--text); font-variant-numeric: tabular-nums; }
-  .hint { margin: 0; font-size: 12px; color: var(--muted); }
-  .lbl.small { font-size: 11px; margin-top: -4px; }
+  .ctrl { display: flex; flex-direction: column; gap: var(--s1); }
+  .ctrl .lbl { display: flex; justify-content: space-between; font-size: var(--fs-footnote); color: var(--label-2); }
+  .ctrl b { color: var(--label); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .lbl.small { font-size: var(--fs-caption2); margin-top: -6px; }
 </style>

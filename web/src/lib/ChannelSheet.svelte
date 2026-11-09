@@ -7,6 +7,12 @@
   import EqEditor from "./EqEditor.svelte";
   import DynamicsPanel from "./DynamicsPanel.svelte";
   import { dynaSlots } from "../../shared/ql-params.ts";
+  import Sheet from "./Sheet.svelte";
+  import Icon from "./Icon.svelte";
+
+  const COLOR_NAMES: Record<string, string> = {
+    Blue: "Blau", Orange: "Orange", Yellow: "Gelb", Purple: "Lila", Cyan: "Cyan", Magenta: "Magenta", Red: "Rot", Green: "Grün", Off: "Keine Farbe",
+  };
 
   interface Props {
     channel: ChannelId;
@@ -46,113 +52,104 @@
   }
 </script>
 
-<div class="backdrop" onclick={onclose} role="presentation"></div>
-<div class="sheet" role="dialog" aria-label="Kanal {channelLabel(channel)}">
-  <header>
-    <button class="icon" onclick={() => step(-1)} aria-label="Vorheriger Kanal">‹</button>
-    <div class="title">
-      <span class="num">{channelLabel(channel)}</span>
-      <span class="chip" style="background: {COLOR_HEX[color]}; color: {darkTextColors.includes(color) ? '#111' : '#fff'}">{name || channelLabel(channel)}</span>
+<Sheet title="Kanal {channelLabel(channel)}" {onclose}>
+  {#snippet header()}
+    <div class="chhead">
+      <button class="icon-btn" onclick={() => step(-1)} aria-label="Vorheriger Kanal"><Icon name="back" /></button>
+      <div class="chtitle">
+        <span class="chnum">{channelLabel(channel)}</span>
+        <span class="chname" style="background: {COLOR_HEX[color]}; color: {darkTextColors.includes(color) ? '#111' : '#fff'}">{name || channelLabel(channel)}</span>
+      </div>
+      <button class="icon-btn" onclick={() => step(1)} aria-label="Nächster Kanal"><Icon name="forward" /></button>
     </div>
-    <button class="icon" onclick={() => step(1)} aria-label="Nächster Kanal">›</button>
-    <span class="spacer"></span>
-    <button class="icon close" onclick={onclose} aria-label="Schließen">✕</button>
-  </header>
+  {/snippet}
 
   {#if hasEQ(channel.kind) || withDyna}
-    <div class="seg">
-      {#if hasEQ(channel.kind)}<button class:sel={tab === "eq"} onclick={() => (chosenTab = "eq")}>EQ</button>{/if}
-      {#if withDyna}<button class:sel={tab === "dyna"} onclick={() => (chosenTab = "dyna")}>Dynamics</button>{/if}
-      <button class:sel={tab === "channel"} onclick={() => (chosenTab = "channel")}>Kanal</button>
+    <div class="segmented" role="tablist" aria-label="Bereich">
+      {#if hasEQ(channel.kind)}<button role="tab" aria-selected={tab === "eq"} class:sel={tab === "eq"} onclick={() => (chosenTab = "eq")}>EQ</button>{/if}
+      {#if withDyna}<button role="tab" aria-selected={tab === "dyna"} class:sel={tab === "dyna"} onclick={() => (chosenTab = "dyna")}>Dynamics</button>{/if}
+      <button role="tab" aria-selected={tab === "channel"} class:sel={tab === "channel"} onclick={() => (chosenTab = "channel")}>Kanal</button>
     </div>
   {/if}
 
-  <div class="body">
-    {#if tab === "dyna"}
-      <DynamicsPanel {channel} />
-    {:else if tab === "eq"}
-      {#if store.eqSchema}
-        <EqEditor {channel} />
-      {:else if store.info?.eqStatus === "probing" || store.info?.eqStatus === "unknown"}
-        <p class="note">Verbinde EQ-Steuerung …</p>
-      {:else}
-        <div class="note">
-          <b>EQ-Verbindung zum Pult nicht möglich.</b>
-          <p>Die EQ-Steuerung nutzt Port 50000 des Pults (wie QL Editor/StageMix). Läuft der QL Editor auf demselben Rechner wie der QLMix-Server, bitte den Editor schließen.</p>
-        </div>
-      {/if}
+  {#if tab === "dyna"}
+    <DynamicsPanel {channel} />
+  {:else if tab === "eq"}
+    {#if store.eqSchema}
+      <EqEditor {channel} />
+    {:else if store.info?.eqStatus === "probing" || store.info?.eqStatus === "unknown"}
+      <p class="t-footnote">Verbinde EQ-Steuerung …</p>
     {:else}
-      <section>
-        <h3>Name &amp; Farbe</h3>
-        <form class="row" onsubmit={(e) => { e.preventDefault(); rename(); }}>
-          <input type="text" maxlength="8" bind:value={nameInput} onblur={rename} placeholder="Name" autocomplete="off" />
+      <div class="group">
+        <b class="t-headline">EQ-Verbindung zum Pult nicht möglich</b>
+        <p class="t-footnote">Die EQ-Steuerung nutzt Port 50000 des Pults – wie QL Editor und StageMix. Läuft der QL Editor auf demselben Rechner wie der QLMix-Server, bitte den Editor schließen.</p>
+      </div>
+    {/if}
+  {:else}
+    <section>
+      <h3 class="section-title">Name und Farbe</h3>
+      <div class="group">
+        <form onsubmit={(e) => { e.preventDefault(); rename(); }}>
+          <input type="text" maxlength="8" bind:value={nameInput} onblur={rename} placeholder="Name (max. 8 Zeichen)" autocomplete="off" aria-label="Kanalname" />
         </form>
-        <div class="colors">
+        <div class="colors" role="radiogroup" aria-label="Kanalfarbe">
           {#each LABEL_COLORS as c}
-            <button class="color" class:sel={c === color} style="background: {COLOR_HEX[c]}" aria-label={c}
-              onclick={() => store.write(channelWriteKeys(channel, "color"), c, true)}></button>
+            <button class="color" class:sel={c === color} style="background: {COLOR_HEX[c]}; color: {darkTextColors.includes(c) ? '#111' : '#fff'}"
+              role="radio" aria-checked={c === color} aria-label={COLOR_NAMES[c] ?? c}
+              onclick={() => store.write(channelWriteKeys(channel, "color"), c, true)}>
+              {#if c === color}<Icon name="check" size={16} />{/if}
+            </button>
           {/each}
         </div>
-      </section>
+      </div>
+    </section>
 
-      {#if hasGain(channel.kind)}
-        <section>
-          <h3>Gain (Vorverstärker) <b>{gainText(gain)}</b></h3>
-          <div class="row">
-            <button class="pill" onclick={() => setGain((gain ?? 0) - 100)}>−1</button>
-            <input type="range" min={GAIN_MIN} max={GAIN_MAX} step="100" value={gain ?? 0}
-              onpointerdown={() => store.touch(channelWriteKeys(channel, "gain"), true)}
-              onpointerup={() => store.touch(channelWriteKeys(channel, "gain"), false)}
-              oninput={(e) => setGain(+e.currentTarget.value)} />
-            <button class="pill" onclick={() => setGain((gain ?? 0) + 100)}>+1</button>
+    {#if hasGain(channel.kind)}
+      <section>
+        <h3 class="section-title">Gain (Vorverstärker)</h3>
+        <div class="group">
+          <div class="gainrow">
+            <span class="gainval num">{gainText(gain)}</span>
+            <button class="pill" onclick={() => setGain((gain ?? 0) - 100)} aria-label="Gain −1 dB">−1</button>
+            <button class="pill" onclick={() => setGain((gain ?? 0) + 100)} aria-label="Gain +1 dB">+1</button>
           </div>
-          <p class="small">Vorsicht: Gain wirkt auch auf alle Monitormixe.</p>
-        </section>
-      {/if}
+          <input type="range" min={GAIN_MIN} max={GAIN_MAX} step="100" value={gain ?? 0} aria-label="Gain"
+            onpointerdown={() => store.touch(channelWriteKeys(channel, "gain"), true)}
+            onpointerup={() => store.touch(channelWriteKeys(channel, "gain"), false)}
+            oninput={(e) => setGain(+e.currentTarget.value)} />
+          <p class="t-footnote">Gain wirkt auch auf alle Monitormixe.</p>
+        </div>
+      </section>
     {/if}
-  </div>
-</div>
+  {/if}
+</Sheet>
 
 <style>
-  .backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); z-index: 20; }
-  .sheet {
-    position: fixed;
-    z-index: 21;
-    left: 50%;
-    bottom: 0;
-    translate: -50% 0;
-    width: min(640px, 100%);
-    max-height: 92dvh;
-    display: flex;
-    flex-direction: column;
-    background: #15181d;
-    border-radius: 18px 18px 0 0;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    padding-bottom: env(safe-area-inset-bottom);
-    animation: up 0.18s ease-out;
+  .chhead { display: flex; align-items: center; gap: var(--s3); }
+  .chtitle { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+  .chnum { font-size: var(--fs-caption); font-weight: 600; color: var(--label-2); letter-spacing: 0.02em; }
+  .chname {
+    padding: 4px 12px;
+    border-radius: var(--r-xs);
+    font: 700 var(--fs-headline) / 22px var(--font);
+    white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
-  @keyframes up { from { transform: translateY(40px); opacity: 0; } }
-  header { display: flex; align-items: center; gap: 8px; padding: 12px 12px 8px; }
-  .title { display: flex; align-items: center; gap: 8px; min-width: 0; }
-  .num { font-size: 12px; color: var(--muted); font-weight: 600; white-space: nowrap; }
-  .chip { padding: 4px 10px; border-radius: 6px; font-weight: 800; font-size: 15px; white-space: nowrap; }
-  .spacer { flex: 1; }
-  .icon { width: 36px; height: 36px; border-radius: 10px; background: #23272e; font-size: 20px; line-height: 1; }
-  .close { font-size: 15px; }
-  .seg { display: flex; margin: 0 12px; background: #0e1013; border-radius: 10px; padding: 3px; }
-  .seg button { flex: 1; height: 32px; border-radius: 8px; font-weight: 700; color: var(--muted); }
-  .seg button.sel { background: #2a2f37; color: var(--text); }
-  .body { overflow-y: auto; padding: 12px 14px 18px; }
-  section { margin-bottom: 18px; }
-  h3 { margin: 0 0 8px; font-size: 13px; color: var(--muted); font-weight: 600; display: flex; justify-content: space-between; }
-  h3 b { color: var(--text); }
-  .row { display: flex; gap: 10px; align-items: center; }
-  .row input[type="text"] { flex: 1; }
-  .row input[type="range"] { flex: 1; }
-  .colors { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
-  .color { width: 36px; height: 36px; border-radius: 9px; border: 2px solid transparent; }
-  .color.sel { border-color: #fff; }
-  .note { color: var(--muted); font-size: 14px; line-height: 1.45; }
-  .note b { color: var(--text); }
-  .small { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+  form input { width: 100%; }
+  .colors { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: var(--s2); }
+  .color {
+    aspect-ratio: 1;
+    min-height: 40px;
+    border-radius: var(--r-sm);
+    display: grid;
+    place-items: center;
+    box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.3);
+    transition: transform 120ms var(--ease);
+  }
+  .color:active { transform: scale(0.94); }
+  .color.sel { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--label); }
+  .gainrow { display: flex; align-items: center; gap: var(--s2); }
+  .gainval { flex: 1; font: 600 var(--fs-title) / 28px var(--font-display); }
 </style>
