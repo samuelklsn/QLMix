@@ -27,12 +27,14 @@ Say ("Windows: " + [Environment]::OSVersion.VersionString)
 # ---------------------------------------------------------------- Konfiguration
 Head "Konfiguration"
 $port = 8080
+$httpsPort = 8443
 $consoleHost = ""
 $configFile = Join-Path $Web "config.json"
 if (Test-Path $configFile) {
   try {
     $cfg = Get-Content $configFile -Raw | ConvertFrom-Json
     $port = [int]$cfg.httpPort
+    if ($cfg.httpsPort) { $httpsPort = [int]$cfg.httpsPort }
     $consoleHost = [string]$cfg.consoleHost
     Ok ("config.json: Pult " + $consoleHost + ", Web-Port " + $port)
   } catch { Bad ("config.json ist nicht lesbar: " + $_.Exception.Message) }
@@ -63,6 +65,9 @@ if ($listen.Count -gt 0) {
   Info ("Port " + $port + " wird belegt von: " + $ownerName + " (" + $listen[0].LocalAddress + ")")
   if ($ownerName -eq "node") { Ok "Port $port gehört QLMix" } else { Bad "Port $port ist von einem anderen Programm belegt ($ownerName)"; Hint "Anderen Port wählen: install.cmd erneut starten oder in config.json httpPort ändern" }
 } else { Bad "Niemand lauscht auf Port $port" }
+
+$listenTls = @(Get-NetTCPConnection -LocalPort $httpsPort -State Listen -ErrorAction SilentlyContinue)
+if ($listenTls.Count -gt 0) { Ok "HTTPS-Port $httpsPort ist aktiv (für die Raum-Automatik)" } else { Hint "HTTPS-Port $httpsPort ist nicht aktiv - Raum-Automatik am Handy nicht möglich (Log prüfen)" }
 
 $localOk = $false
 try {

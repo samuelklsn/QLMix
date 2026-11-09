@@ -5,6 +5,7 @@
 // Settings are persisted in web/config.json.
 
 import http from "node:http";
+import https from "node:https";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -13,7 +14,11 @@ import { WebSocketServer, type WebSocket } from "ws";
 import qrcode from "qrcode-terminal";
 import { ConsoleLink } from "./console-link.ts";
 import { QLLink } from "./ql-link.ts";
-import { type ChannelId, type Key, type Kind, type Value, KINDS, PREFIX } from "../shared/rcp.ts";
+import { AutoLevel, type AutoConfig, DEFAULT_AUTO_CONFIG } from "./autolevel.ts";
+import { ensureTls } from "./tls.ts";
+import {
+  type ChannelId, type Key, type Kind, type Value, KINDS, PREFIX, channelLabel, channelParamKey, channelWriteKeys,
+} from "../shared/rcp.ts";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DIST = path.join(ROOT, "dist");
@@ -25,15 +30,21 @@ interface Config {
   consoleHost: string;
   consolePort: number;
   httpPort: number;
+  httpsPort: number;
   pin: string;
   autoConnect: boolean;
+  autolevel: AutoConfig;
 }
 
 function loadConfig(): Config {
-  const defaults: Config = { consoleHost: "192.168.0.128", consolePort: 49280, httpPort: 8080, pin: "", autoConnect: true };
+  const defaults: Config = {
+    consoleHost: "192.168.0.128", consolePort: 49280, httpPort: 8080, httpsPort: 8443, pin: "", autoConnect: true,
+    autolevel: { ...DEFAULT_AUTO_CONFIG },
+  };
   let cfg = defaults;
   try {
-    cfg = { ...defaults, ...JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8")) };
+    const saved = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
+    cfg = { ...defaults, ...saved, autolevel: { ...DEFAULT_AUTO_CONFIG, ...(saved.autolevel ?? {}) } };
   } catch { /* first start */ }
   const args = process.argv.slice(2);
   for (let i = 0; i < args.length; i++) {
@@ -42,6 +53,7 @@ function loadConfig(): Config {
       case "--console": cfg.consoleHost = next(); break;
       case "--console-port": cfg.consolePort = Number(next()); break;
       case "--http-port": case "--port": cfg.httpPort = Number(next()); break;
+      case "--https-port": cfg.httpsPort = Number(next()); break;
       case "--pin": cfg.pin = next(); break;
       case "--no-connect": cfg.autoConnect = false; break;
       case "--help": case "-h":
@@ -85,8 +97,27 @@ const TYPES: Record<string, string> = {
   ".png": "image/png", ".json": "application/json", ".webmanifest": "application/manifest+json", ".ico": "image/x-icon",
 };
 
-const server = http.createServer((req, res) => {
+const CERT_DIR = path.join(ROOT, "certs");
+let tls: ReturnType<typeof ensureTls> | null = null;
+try {
+  tls = ensureTls(CERT_DIR);
+} catch (err) {
+  console.error("HTTPS-Zertifikat konnte nicht erstellt werden:", err);
+}
+
+function handler(req: http.IncomingMessage, res: http.ServerResponse) {
   const url = new URL(req.url ?? "/", "http://x");
+  if (url.pathname === "/qlmix-ca.crt" && tls) {
+    res.writeHead(200, {
+      "content-type": "application/x-x509-ca-cert",
+      "content-disposition": "attachment; filename=\"QLMix-Zertifikat.crt\"",
+    });
+    return res.end(tls.caCert);
+  }
+  if (url.pathname === "/api/endpoints") {
+    res.writeHead(200, { "content-type": "application/json" });
+    return res.end(JSON.stringify({ httpPort: config.httpPort, httpsPort: tls ? config.httpsPort : null }));
+  }
   if (url.pathname === "/api/status") {
     res.writeHead(200, { "content-type": "application/json" });
     const { t: _t, ...status } = info();
@@ -105,7 +136,10 @@ const server = http.createServer((req, res) => {
     "cache-control": file.includes(`${path.sep}assets${path.sep}`) ? "public, max-age=31536000, immutable" : "no-cache",
   });
   fs.createReadStream(file).pipe(res);
-});
+}
+
+const server = http.createServer(handler);
+const secureServer = tls ? https.createServer({ key: tls.key, cert: tls.cert }, handler) : null;
 
 // ---------------------------------------------------------------- WebSocket
 
@@ -118,10 +152,12 @@ function updateWatched() {
 const clients = new Set<Client>();
 const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 
-server.on("upgrade", (req, socket, head) => {
+function upgrade(req: http.IncomingMessage, socket: import("node:stream").Duplex, head: Buffer) {
   if (new URL(req.url ?? "/", "http://x").pathname !== "/ws") return socket.destroy();
   wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws));
-});
+}
+server.on("upgrade", upgrade);
+secureServer?.on("upgrade", upgrade);
 
 const send = (c: Client, msg: unknown) => { if (c.ws.readyState === c.ws.OPEN) c.ws.send(JSON.stringify(msg)); };
 const broadcast = (msg: unknown) => { const s = JSON.stringify(msg); for (const c of clients) if (c.authed && c.ws.readyState === c.ws.OPEN) c.ws.send(s); };
@@ -143,17 +179,69 @@ function snapshot(c: Client) {
 /** Only parameters the UI is meant to change may be written by clients. */
 const WRITABLE = /^MIXER:Current\/(?:(?:InCh|StInCh|Mix|Mtrx|St|DCA)\/(?:Fader\/Level|Fader\/On|Label\/Name|Label\/Color|ToMix\/Level|ToMix\/On|Port\/HA\/Gain|PEQ\/.+|EQ\/.+|HPF\/(?:On|Freq))|Cue\/(?:InCh|StInCh|Mix|Mtrx|St|DCA)\/On)$/;
 
+// ---------------------------------------------------------------- Raum-Automatik
+
+const auto = new AutoLevel({
+  now: () => Date.now(),
+  fader: (c) => { const v = link.values.get(channelParamKey(c, "level")); return typeof v === "number" ? v : undefined; },
+  isOn: (c) => link.values.get(channelParamKey(c, "on")) === 1,
+  setFader: (c, raw) => { for (const k of channelWriteKeys(c, "level")) { link.set(k, raw); queueParam(k, raw); } },
+  label: (c) => { const n = link.values.get(channelParamKey(c, "name")); return typeof n === "string" && n ? n : channelLabel(c); },
+}, config.autolevel);
+let roomClient: Client | null = null;
+ql.on("inmeters", (levels: Map<string, number>) => auto.setMeters(levels));
+
+const autoState = () => ({ t: "auto", config: auto.config, status: auto.getStatus(), measuring: roomClient !== null });
+let lastAuto = "";
+setInterval(() => {
+  auto.tick();
+  const msg = JSON.stringify(autoState());
+  if (msg !== lastAuto || auto.enabled) { lastAuto = msg; for (const c of clients) if (c.authed && c.ws.readyState === c.ws.OPEN) c.ws.send(msg); }
+}, 250);
+
+function saveAuto() {
+  config.autolevel = auto.config;
+  saveConfig();
+}
+
+function handleAuto(client: Client, m: any) {
+  let error: string | null = null;
+  switch (m.action) {
+    case "start": error = auto.start(); if (!error) console.log("[Auto] Raum-Automatik gestartet"); break;
+    case "stop": auto.stop(); console.log("[Auto] Raum-Automatik gestoppt"); break;
+    case "reference": error = auto.takeReference(); saveAuto(); break;
+    case "config": {
+      const c = m.config ?? {};
+      const num = (v: unknown, lo: number, hi: number, d: number) => (typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
+      if (Array.isArray(c.channels)) {
+        auto.config.channels = c.channels
+          .filter((x: any) => (x?.kind === "input" || x?.kind === "stereoInput") && Number.isInteger(x?.index))
+          .map((x: any) => ({ kind: x.kind, index: x.index }));
+      }
+      auto.config.offset = num(c.offset, -15, 15, auto.config.offset);
+      auto.config.maxBoost = num(c.maxBoost, 0, 15, auto.config.maxBoost);
+      auto.config.maxCut = num(c.maxCut, 0, 30, auto.config.maxCut);
+      auto.config.speed = num(c.speed, 0.2, 4, auto.config.speed);
+      auto.config.ceiling = num(c.ceiling, -10, 10, auto.config.ceiling);
+      saveAuto();
+      break;
+    }
+  }
+  send(client, { t: "autoresult", action: m.action, error });
+  broadcast(autoState());
+}
+
 wss.on("connection", (ws) => {
   const client: Client = { ws, authed: config.pin === "", eqWatch: null, rackWatch: null };
   clients.add(client);
   send(client, { t: "hello", pinRequired: !client.authed });
-  if (client.authed) snapshot(client);
+  if (client.authed) { snapshot(client); send(client, autoState()); }
 
   ws.on("message", (data) => {
     let m: any;
     try { m = JSON.parse(String(data)); } catch { return; }
     if (m.t === "auth") {
-      if (String(m.pin) === config.pin) { client.authed = true; send(client, { t: "authOk" }); snapshot(client); }
+      if (String(m.pin) === config.pin) { client.authed = true; send(client, { t: "authOk" }); snapshot(client); send(client, autoState()); }
       else send(client, { t: "authFail" });
       return;
     }
@@ -178,6 +266,13 @@ wss.on("connection", (ws) => {
         updateWatched();
         break;
       }
+      case "room":
+        if (typeof m.level === "number") {
+          roomClient = client;
+          auto.addRoomSample(m.level, m.feedback === true);
+        }
+        break;
+      case "auto": handleAuto(client, m); break;
       case "rackwatch":
         client.rackWatch = Number.isInteger(m.rack) ? m.rack : null;
         updateWatched();
@@ -195,7 +290,11 @@ wss.on("connection", (ws) => {
       case "log": send(client, { t: "log", entries: logBuffer.slice(-200) }); break;
     }
   });
-  ws.on("close", () => { clients.delete(client); updateWatched(); });
+  ws.on("close", () => {
+    clients.delete(client);
+    if (roomClient === client) roomClient = null; // automatic holds by itself when samples stop
+    updateWatched();
+  });
 });
 
 // Batched parameter broadcast (every 25 ms). The originating client gets its own changes
@@ -240,6 +339,7 @@ server.listen(config.httpPort, "0.0.0.0", () => {
   console.log(`  Auf diesem Mac:  http://localhost:${config.httpPort}`);
   for (const u of urls) console.log(`  Im Netzwerk:     ${u}`);
   if (config.pin) console.log(`  PIN:             ${config.pin}`);
+  if (secureServer) console.log(`  Mit Mikrofon (Raum-Automatik): https://<IP>:${config.httpsPort}  ·  Zertifikat: http://<IP>:${config.httpPort}/qlmix-ca.crt`);
   console.log(`  Pult:            ${config.consoleHost}:${config.consolePort}\n`);
   if (urls[0]) {
     console.log("  Mit dem Handy scannen:\n");
@@ -249,9 +349,12 @@ server.listen(config.httpPort, "0.0.0.0", () => {
   if (config.autoConnect && config.consoleHost) link.connect(config.consoleHost, config.consolePort);
 });
 
+secureServer?.listen(config.httpsPort, "0.0.0.0");
+secureServer?.on("error", (err: NodeJS.ErrnoException) => console.error(`HTTPS-Port ${config.httpsPort}:`, err.code ?? err.message));
+
 server.on("error", (err: NodeJS.ErrnoException) => {
   console.error(err.code === "EADDRINUSE" ? `Port ${config.httpPort} ist belegt. Anderen Port wählen: --http-port 8081` : err);
   process.exit(1);
 });
 
-process.on("SIGINT", () => { ql.disconnect(); link.disconnect(); process.exit(0); });
+process.on("SIGINT", () => { auto.stop(); ql.disconnect(); link.disconnect(); process.exit(0); });

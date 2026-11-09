@@ -15,6 +15,7 @@ import {
   QL_SCHEMA, QL_WRITABLE, allChannels, eqKey, eqParamsFor, hasEQ, parseQlKey, qlKey, qlParseChange, qlSysex,
 } from "../shared/rcp.ts";
 import { RACK_COUNT, allDynaKeys, allRackKeys, extraWritable } from "../shared/ql-params.ts";
+import { INPUT_METER_REQUEST, decodeInputMeters } from "./autolevel.ts";
 
 /** Everything a client may write over the editor protocol: EQ/HPF, dynamics, rack parameters. */
 const WRITABLE: Record<number, number[]> = { ...QL_WRITABLE, ...extraWritable() };
@@ -108,7 +109,10 @@ export class QLLink extends EventEmitter {
       this.syncAll();
       const poll = setInterval(() => { if (gen === this.gen) this.poll(); }, POLL_MS);
       const keep = setInterval(() => { if (gen === this.gen && this.queue.length === 0) this.write([qlSysex(67, 2, 0)]); }, KEEPALIVE_MS);
-      this.timers.push(poll, keep);
+      // Input meter stream (re-requested every few seconds, like QL Editor does).
+      this.write([INPUT_METER_REQUEST]);
+      const meters = setInterval(() => { if (gen === this.gen) this.write([INPUT_METER_REQUEST]); }, 5000);
+      this.timers.push(poll, keep, meters);
     });
     s.on("data", (d: Buffer) => { if (gen === this.gen) this.receive(d); });
     s.on("error", () => this.lost(gen));
@@ -199,8 +203,13 @@ export class QLLink extends EventEmitter {
       if (end < 0) break;
       const m = this.buf.subarray(start, end + 1);
       this.buf = this.buf.subarray(end + 1);
+      if (m[5] === 0x21) {
+        const levels = decodeInputMeters(m);
+        if (levels) this.emit("inmeters", levels);
+        continue;
+      }
       const change = qlParseChange(m);
-      if (!change) continue; // meters (0x21), heartbeats (0x7f), …
+      if (!change) continue; // other meters, heartbeats (0x7f), …
       if (!this.gotAnswer) {
         this.gotAnswer = true;
         this.emit("status");

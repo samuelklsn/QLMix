@@ -7,6 +7,8 @@ des Pults; bedient wird **im Browser** auf jedem Handy, Tablet oder Computer.
 * Fader, ON, CUE für Eingänge, Stereo-Eingänge, Mix, Matrix, DCA und Summe
 * **Monitormixe** (Sends on Fader) – Musiker stellen ihren In-Ear-Mix selbst am Handy ein (`/?mix=3`)
 * **EQ und Hochpass** pro Kanal mit grafischer Kurve, Gain (Vorverstärker), Namen, Farben, Szenen, Meter
+* **Raum-Automatik** (neu in 1.1, Testphase): Das Handy misst in der Raummitte, QLMix erkennt das sprechende Mikro
+  und regelt es so, dass jeder Redner gleich laut im Raum ankommt
 * **Dynamics** (Gate/Kompressor …) und **Premium Rack** (Portico, Dynamic EQ …) – *in Vorbereitung, Abgleich am Pult folgt*
 * läuft als App auf dem Home-Bildschirm (iPhone/iPad), optional mit PIN
 
@@ -65,6 +67,9 @@ Handy ins WLAN des Pult-Netzwerks, in **Safari/Chrome** die angezeigte Adresse �
 
 ### Update einspielen (neue Version von GitHub)
 
+> **Update von 1.0 auf 1.1 (Raum-Automatik): `update.cmd` diesmal zweimal hintereinander ausführen.**
+> Beim ersten Mal holt es die neue Version, beim zweiten Mal gibt es den neuen HTTPS-Port 8443 in der Firewall frei.
+
 Wenn es eine neue Version gibt, auf dem Windows-PC:
 
 1. Im Explorer **`C:\QLMix\web\windows\update.cmd`** doppelklicken.
@@ -93,6 +98,35 @@ Die Einstellungen (Pult-IP, PIN) bleiben erhalten. Auf den Handys danach die Sei
 Weitere Details zur Web-Version (Bedienung, Musiker-Links, PIN, Mac/Linux): **[web/README.md](web/README.md)**
 
 ---
+
+## Raum-Automatik (Version 1.1, Testphase)
+
+Ein Handy liegt in der Mitte des Raums und misst, wie laut die Sprache ankommt. QLMix erkennt am Pult, welches
+Sprecher-Mikrofon aktiv ist, und zieht dessen Fader langsam so, dass jeder Redner gleich laut im Raum ankommt.
+
+### Einmalig: Handy für die Messung freischalten (iPhone)
+
+Browser erlauben das Mikrofon nur über eine sichere Verbindung (HTTPS). QLMix bringt dafür ein eigenes Zertifikat mit:
+
+1. Auf dem iPhone in **Safari** öffnen: `http://<IP-des-PCs>:8080/qlmix-ca.crt` → **Erlauben** → „Profil geladen“.
+2. **Einstellungen → Allgemein → VPN und Geräteverwaltung → „QLMix Local CA“ → Installieren.**
+3. **Einstellungen → Allgemein → Info → Zertifikatsvertrauenseinstellungen → „QLMix Local CA“ einschalten.**
+4. Ab jetzt QLMix über **`https://<IP-des-PCs>:8443`** öffnen (z. B. `https://192.168.1.50:8443`).
+
+(Der Link zum Zertifikat und zur sicheren Adresse steht auch direkt in QLMix unter **Auto**.)
+
+### Benutzung
+
+1. Oben auf **Auto** tippen.
+2. **Sprecher-Mikrofone** auswählen (Kanzel, Rednerpult, Funkmikros – keine Instrumente).
+3. Handy in die **Mitte des Raums** legen → **„Dieses Handy misst den Raum“** (Mikrofon erlauben, Bildschirm anlassen).
+4. Während jemand **normal spricht** und es gut klingt: **„So soll es klingen“**.
+5. **Automatik starten.** Mit dem Regler **leiser/lauter** die Ziel-Lautstärke jederzeit anpassen.
+
+**Sicherheit:** Die Automatik bewegt nur die ausgewählten Kanäle, höchstens so weit wie eingestellt
+(Standard: +6 dB / −10 dB vom Ausgangswert, Fader nie über +5 dB). Bei Rückkopplung wird sofort um 3 dB abgesenkt.
+Fader, die jemand von Hand bewegt, bleiben 20 Sekunden in Ruhe. Fällt die Messung aus, bleiben alle Fader stehen.
+Bei Musik die Automatik ausschalten. **Vor dem ersten Einsatz im Gottesdienst in Ruhe testen.**
 
 ## Weitere Teile dieses Projekts
 

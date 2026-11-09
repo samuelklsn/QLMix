@@ -12,6 +12,10 @@ final class SysExConsole: @unchecked Sendable {
     private var buffers: [ObjectIdentifier: [UInt8]] = [:]
     private var connections: [ObjectIdentifier: NWConnection] = [:]
     private let verbose: Bool
+    /// Channel (0-based) that "talks" in the simulated input meters.
+    var talker = 0
+    private var meterTimers: [ObjectIdentifier: DispatchSourceTimer] = [:]
+    private var meterUntil: [ObjectIdentifier: Date] = [:]
 
     init(port: UInt16, inputs: Int, verbose: Bool) {
         self.port = port
@@ -87,6 +91,32 @@ final class SysExConsole: @unchecked Sendable {
         }
     }
 
+    /// Streams input meters (88 records × 10 points) at 10 Hz for 10 s after each request, like the console.
+    private func startMeters(for c: NWConnection) {
+        let id = ObjectIdentifier(c)
+        meterUntil[id] = Date().addingTimeInterval(10)
+        guard meterTimers[id] == nil else { return }
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now(), repeating: .milliseconds(100))
+        timer.setEventHandler { [weak self, weak c] in
+            guard let self, let c else { timer.cancel(); return }
+            if (self.meterUntil[id] ?? .distantPast) < Date() { timer.cancel(); self.meterTimers[id] = nil; return }
+            let t = Date().timeIntervalSinceReferenceDate
+            let talking = sin(t * 1.3) > -0.4   // speech with pauses
+            var data = [UInt8](repeating: 0, count: 880)
+            for ch in 0..<88 {
+                var level: Double = ch < 64 ? 4 + Double.random(in: 0...2) : 0
+                if ch == self.talker, talking { level = 72 + 8 * sin(t * 7) + Double.random(in: -3...3) }
+                for p in 0..<8 where p != 6 { data[ch * 10 + p] = UInt8(max(0, min(126, level))) }
+                data[ch * 10 + 8] = 126; data[ch * 10 + 9] = 126
+            }
+            let frame: [UInt8] = [0xF0, 0x43, 0x10, 0x3E, 0x19, 0x21, 0x00, 0x7F, 0x00] + data + [0xF7]
+            c.send(content: Data(frame), completion: .contentProcessed { _ in })
+        }
+        timer.resume()
+        meterTimers[id] = timer
+    }
+
     private func handle(_ bytes: [UInt8], from c: NWConnection) {
         let id = ObjectIdentifier(c)
         var buf = (buffers[id] ?? []) + bytes
@@ -94,6 +124,7 @@ final class SysExConsole: @unchecked Sendable {
         while let start = buf.firstIndex(of: 0xF0), let end = buf[start...].firstIndex(of: 0xF7) {
             let m = Array(buf[start...end])
             buf.removeSubrange(..<(end + 1))
+            if m.count >= 7, m[5] == 0x21, m[2] & 0xF0 == 0x30, m[6] == 0x00 { startMeters(for: c); continue }
             guard m.count >= 13, m[1] == 0x43, m[3] == 0x3E, m[5] == 0x01 else { continue }
             let elem = Int(m[6]) << 7 | Int(m[7]), index = Int(m[8]) << 7 | Int(m[9]), ch = Int(m[10]) << 7 | Int(m[11])
             if m[2] & 0xF0 == 0x10, m.count == 18 {

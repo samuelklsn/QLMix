@@ -24,6 +24,18 @@ if ($git -and (Test-Path (Join-Path (Split-Path -Parent $Web) ".git"))) {
 
 npm.cmd install --no-audit --no-fund
 npm.cmd run build
+
+# Firewall: Web-Port und HTTPS-Port (ab Version 1.1 für die Raum-Automatik)
+$port = 8080; $httpsPort = 8443
+try {
+  $cfg = Get-Content (Join-Path $Web "config.json") -Raw | ConvertFrom-Json
+  if ($cfg.httpPort) { $port = [int]$cfg.httpPort }
+  if ($cfg.httpsPort) { $httpsPort = [int]$cfg.httpsPort }
+} catch { }
+Get-NetFirewallRule -DisplayName "QLMix Web" -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+New-NetFirewallRule -DisplayName "QLMix Web" -Direction Inbound -Protocol TCP -LocalPort @("$port", "$httpsPort") -Action Allow `
+  -RemoteAddress @("LocalSubnet", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16") -Profile Any | Out-Null
+Write-Host "Firewall-Freigabe für Port $port und $httpsPort aktualisiert."
 Start-ScheduledTask -TaskName "QLMix"
 Write-Host "QLMix wurde aktualisiert und neu gestartet." -ForegroundColor Green
 Read-Host "Enter zum Schließen"

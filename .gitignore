@@ -8,3 +8,4 @@ build/
 /web/dist/
 /web/qlmix.log
 /web/windows/run-server.cmd
+/web/certs/

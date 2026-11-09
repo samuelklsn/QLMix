@@ -7,6 +7,7 @@
   import ChannelSheet from "./lib/ChannelSheet.svelte";
   import SettingsSheet from "./lib/SettingsSheet.svelte";
   import RackSheet from "./lib/RackSheet.svelte";
+  import AutoSheet from "./lib/AutoSheet.svelte";
 
   // ?mix=3 → locked to monitor mix 3 (for musicians)
   const params = new URLSearchParams(location.search);
@@ -19,6 +20,7 @@
   let sheet = $state<ChannelId | null>(null);
   let settings = $state(false);
   let rack = $state(false);
+  let autoOpen = $state(new URLSearchParams(location.search).has("auto"));
   let pin = $state("");
   let width = $state(1000);
 
@@ -101,6 +103,7 @@
       <span class="scene">Szene <b>{String(store.info.scene).padStart(3, "0")}</b></span>
     {/if}
     {#if lockedMix === null}
+      <button class="icon rackbtn" class:autoon={store.auto?.status.enabled} onclick={() => (autoOpen = true)} aria-label="Raum-Automatik">Auto</button>
       {#if store.eqSchema?.kind === "ql"}
         <button class="icon rackbtn" onclick={() => (rack = true)} aria-label="Premium Rack">Rack</button>
       {/if}
@@ -171,6 +174,9 @@
 {#if rack}
   <RackSheet onclose={() => (rack = false)} />
 {/if}
+{#if autoOpen}
+  <AutoSheet onclose={() => (autoOpen = false)} />
+{/if}
 
 {#if store.needPin}
   <div class="pin">
@@ -200,6 +206,7 @@
   .scene b { color: #6fd8ff; font-variant-numeric: tabular-nums; font-size: 15px; }
   .icon { width: 38px; height: 38px; border-radius: 10px; background: #1d2026; font-size: 18px; }
   .icon.rackbtn { width: auto; padding: 0 10px; font-size: 13px; font-weight: 700; }
+  .icon.rackbtn.autoon { background: #34c759; color: #06260f; }
   .modes { display: flex; margin: 2px 12px 6px; background: #0e1013; border-radius: 11px; padding: 3px; }
   .modes button { flex: 1; height: 34px; border-radius: 9px; font-weight: 700; color: var(--muted); }
   .modes button.sel { background: #2a2f37; color: var(--text); }

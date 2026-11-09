@@ -14,6 +14,7 @@
 param(
   [string]$ConsoleIp = "",
   [int]$Port = 8080,
+  [int]$HttpsPort = 8443,
   [string]$Pin = ""
 )
 
@@ -76,7 +77,7 @@ if ($LASTEXITCODE -ne 0) { throw "npm run build fehlgeschlagen" }
 # ---------------------------------------------------------------- Konfiguration
 Write-Step "Konfiguration"
 $configFile = Join-Path $Web "config.json"
-$config = [ordered]@{ consoleHost = "192.168.0.128"; consolePort = 49280; httpPort = $Port; pin = ""; autoConnect = $true }
+$config = [ordered]@{ consoleHost = "192.168.0.128"; consolePort = 49280; httpPort = $Port; httpsPort = $HttpsPort; pin = ""; autoConnect = $true }
 if (Test-Path $configFile) {
   $existing = Get-Content $configFile -Raw | ConvertFrom-Json
   foreach ($p in $existing.PSObject.Properties) { $config[$p.Name] = $p.Value }
@@ -87,6 +88,7 @@ if (-not $ConsoleIp) {
 }
 $config.consoleHost = $ConsoleIp
 $config.httpPort = $Port
+$config.httpsPort = $HttpsPort
 if ($Pin) { $config.pin = $Pin }
 $json = $config | ConvertTo-Json
 [IO.File]::WriteAllText($configFile, $json + "`n", (New-Object Text.UTF8Encoding($false)))
@@ -116,9 +118,9 @@ Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Pr
   -Description "QLMix Web - Fernsteuerung für Yamaha QL/CL (startet beim Systemstart)" | Out-Null
 
 # ---------------------------------------------------------------- Firewall
-Write-Step "Öffne Port $Port in der Windows-Firewall (nur lokales Netzwerk)"
+Write-Step "Öffne Port $Port und $HttpsPort (HTTPS) in der Windows-Firewall (nur lokales Netzwerk)"
 Get-NetFirewallRule -DisplayName $RuleName -ErrorAction SilentlyContinue | Remove-NetFirewallRule
-New-NetFirewallRule -DisplayName $RuleName -Direction Inbound -Protocol TCP -LocalPort $Port -Action Allow `
+New-NetFirewallRule -DisplayName $RuleName -Direction Inbound -Protocol TCP -LocalPort @("$Port", "$HttpsPort") -Action Allow `
   -RemoteAddress @("LocalSubnet", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16") -Profile Any | Out-Null
 # Von Windows angelegte Sperr-Regeln für node.exe (z. B. nach "Abbrechen" im Firewall-Dialog) würden die Freigabe aushebeln.
 $nodeBlocks = @()
@@ -150,6 +152,12 @@ Write-Host ""
 Write-Host "Auf dem Handy/Tablet im selben Netzwerk öffnen:"
 foreach ($c in @(Get-NetIPConfiguration | Where-Object { $_.IPv4Address -and $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq "Up" })) {
   Write-Host ("   http://{0}:{1}    ({2})" -f $c.IPv4Address[0].IPAddress, $Port, $c.InterfaceAlias) -ForegroundColor White
+}
+Write-Host ""
+Write-Host "Raum-Automatik (Mikrofon am Handy) braucht die sichere Adresse:" -ForegroundColor White
+foreach ($c in @(Get-NetIPConfiguration | Where-Object { $_.IPv4Address -and $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq "Up" })) {
+  $ip = $c.IPv4Address[0].IPAddress
+  Write-Host ("   https://{0}:{1}    (vorher einmalig Zertifikat laden: http://{0}:{2}/qlmix-ca.crt)" -f $ip, $HttpsPort, $Port)
 }
 Write-Host "Klappt es nicht: windows\diagnose.cmd ausführen."
 Write-Host ""

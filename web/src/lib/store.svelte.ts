@@ -28,6 +28,32 @@ export interface ServerInfo {
 
 export interface LogEntry { t: number; d: string; s: string }
 
+export interface AutoConfigState {
+  channels: ChannelId[];
+  reference: number | null;
+  offset: number;
+  maxBoost: number;
+  maxCut: number;
+  speed: number;
+  ceiling: number;
+}
+
+export interface AutoState {
+  config: AutoConfigState;
+  measuring: boolean;
+  status: {
+    enabled: boolean;
+    message: string;
+    level: "ok" | "info" | "warn";
+    active: string | null;
+    activeKey: string | null;
+    room: { level: number | null; speech: number | null; floor: number | null; target: number | null; fresh: boolean };
+    metersAvailable: boolean;
+    corrections: Record<string, number>;
+    feedback: boolean;
+  };
+}
+
 const SEND_INTERVAL = 30;
 
 class Store {
@@ -38,6 +64,9 @@ class Store {
   pinError = $state(false);
   meters = $state<Record<string, number[]>>({});
   log = $state<LogEntry[]>([]);
+  auto = $state<AutoState | null>(null);
+  autoError = $state<string | null>(null);
+
   /** Shows raw console values next to converted ones (for calibration). */
   rawMode = $state(localStorage.getItem("qlmix.raw") === "1");
 
@@ -110,6 +139,14 @@ class Store {
         break;
       case "log":
         this.log = m.entries;
+        break;
+      case "auto": {
+        const { t: _t, ...a } = m;
+        this.auto = a;
+        break;
+      }
+      case "autoresult":
+        this.autoError = m.error ?? null;
         break;
     }
   }
@@ -204,6 +241,15 @@ class Store {
     if (!s) return;
     const snapped = snapEq(eq, s);
     for (const p of params) this.write(eqWriteKeys(c, p, s), eqRaw(snapped, p, s), immediate);
+  }
+
+  autoAction(action: "start" | "stop" | "reference" | "config", config?: Partial<AutoConfigState>): void {
+    this.autoError = null;
+    this.sendRaw({ t: "auto", action, config });
+  }
+
+  sendRoom(level: number, feedback: boolean): void {
+    this.sendRaw({ t: "room", level, feedback });
   }
 
   setRawMode(on: boolean): void {
