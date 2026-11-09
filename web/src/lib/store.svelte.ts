@@ -51,6 +51,7 @@ export interface AutoState {
     metersAvailable: boolean;
     corrections: Record<string, number>;
     feedback: boolean;
+    mics: { key: string; label: string; level: number | null; floor: number | null; excess: number | null; speaking: boolean; on: boolean; faderOpen: boolean }[];
   };
 }
 

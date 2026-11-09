@@ -116,3 +116,48 @@ test("decodes the input meter block (88 × 10)", () => {
   assert.equal(levels.get("stereoInput:0"), 55);
   assert.equal(decodeInputMeters(m.subarray(0, 100)), null);
 });
+
+test("detects the pulpit mic by its own noise floor, and explains a closed fader", () => {
+  let now = 0;
+  const faders: Record<string, number> = { "input:0": -500, "input:1": 0 };
+  const io = {
+    now: () => now,
+    fader: (c: ChannelId) => faders[`${c.kind}:${c.index}`],
+    isOn: () => true,
+    setFader: (c: ChannelId, raw: number) => { faders[`${c.kind}:${c.index}`] = raw; },
+    label: (c: ChannelId) => (c.index === 0 ? "Kanzel" : "Links"),
+  };
+  const al = new AutoLevel(io, { channels: [{ kind: "input", index: 0 }, { kind: "input", index: 1 }], reference: -30 });
+  al.start();
+  // 10 s of quiet: Kanzel has a high noise floor (gain +45 dB), "Links" a low one.
+  for (let i = 0; i < 100; i++) {
+    now += 100;
+    al.setMeters(new Map([["input:0", 50 + (i % 3)], ["input:1", 20 + (i % 3)]]));
+    al.addRoomSample(-70, false);
+  }
+  // Someone talks near "Links": it is far above its own floor although Kanzel shows the higher raw value.
+  for (let i = 0; i < 10; i++) {
+    now += 100;
+    al.setMeters(new Map([["input:0", 66], ["input:1", 58]]));
+    al.addRoomSample(-30, false);
+    al.tick();
+  }
+  let s = al.getStatus();
+  assert.equal(s.active, "Links", "Links: 58 − 20 = 38 above its floor beats Kanzel 66 − 50 = 16");
+  // Now someone talks into the pulpit.
+  for (let i = 0; i < 10; i++) {
+    now += 100;
+    al.setMeters(new Map([["input:0", 75], ["input:1", 22]]));
+    al.addRoomSample(-30, false);
+    al.tick();
+  }
+  s = al.getStatus();
+  assert.equal(s.active, "Kanzel");
+  assert.equal(s.mics.find((m) => m.label === "Kanzel")?.speaking, true);
+
+  faders["input:0"] = -32768;                    // pulpit fader closed
+  al.tick();
+  s = al.getStatus();
+  assert.equal(s.active, "Kanzel");
+  assert.match(s.message, /Kanzel spricht, aber Fader ist ganz unten/);
+});

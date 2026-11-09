@@ -110,6 +110,33 @@
       {/if}
       {#if store.autoError && store.autoErrorAction !== "reference"}<p class="err">{store.autoError}</p>{/if}
 
+      <!-- Live detection per selected mic -->
+      {#if st.mics?.length}
+        <div class="mics">
+          <div class="micshead">
+            <b>Erkennung</b>
+            <small>{st.metersAvailable ? "Pult-Pegel über Grundrauschen" : "ohne Pult-Pegel: nur das einzige offene Mikro zählt"}</small>
+          </div>
+          {#each st.mics as m}
+            <div class="mic" class:speaking={m.speaking} class:active={st.activeKey === m.key}>
+              <span class="mname">{m.label}</span>
+              <div class="mbar">
+                {#if m.level !== null}
+                  <div class="mfill" style="width: {Math.min(100, (m.level / 126) * 100)}%"></div>
+                  {#if m.floor !== null}<div class="mfloor" style="left: {Math.min(100, ((m.floor + 8) / 126) * 100)}%" title="Schwelle"></div>{/if}
+                {/if}
+              </div>
+              <span class="mstate">
+                {#if !m.on}<em class="warn">aus</em>
+                {:else if !m.faderOpen}<em class="warn">Fader zu</em>
+                {:else if m.speaking}<em class="ok">spricht</em>
+                {:else}<em>ruhig</em>{/if}
+              </span>
+            </div>
+          {/each}
+        </div>
+      {/if}
+
       <!-- 1 Measurement -->
       <section>
         <h3>1 · Messung in der Raummitte</h3>
@@ -263,5 +290,19 @@
   .ch.active { box-shadow: 0 0 0 2px #ffd60a; }
   .ch .corr { font-size: 11px; color: #ffd60a; font-variant-numeric: tabular-nums; }
   .speeds { display: flex; gap: 8px; }
+  .mics { margin-top: 12px; background: #1b1f25; border-radius: 12px; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; }
+  .micshead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 13px; }
+  .micshead small { color: var(--muted); font-size: 11px; text-align: right; }
+  .mic { display: grid; grid-template-columns: 90px 1fr 70px; align-items: center; gap: 8px; font-size: 13px; }
+  .mic.active .mname { color: #ffd60a; font-weight: 700; }
+  .mname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mbar { position: relative; height: 8px; border-radius: 4px; background: #0b0d10; overflow: hidden; }
+  .mfill { position: absolute; inset: 0 auto 0 0; background: #4b5563; transition: width 0.1s linear; }
+  .mic.speaking .mfill { background: #34c759; }
+  .mfloor { position: absolute; top: 0; bottom: 0; width: 2px; background: #ffd60a; }
+  .mstate { text-align: right; font-size: 12px; }
+  .mstate em { font-style: normal; color: var(--muted); }
+  .mstate em.ok { color: #34c759; font-weight: 700; }
+  .mstate em.warn { color: #ff9f0a; font-weight: 700; }
   .speeds .pill { flex: 1; }
 </style>

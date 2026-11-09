@@ -189,6 +189,7 @@ const auto = new AutoLevel({
   label: (c) => { const n = link.values.get(channelParamKey(c, "name")); return typeof n === "string" && n ? n : channelLabel(c); },
 }, config.autolevel);
 let roomClient: Client | null = null;
+auto.onActiveChange = (label) => { if (auto.enabled) console.log(`[Auto] aktives Mikro: ${label ?? "keins"}`); };
 ql.on("inmeters", (levels: Map<string, number>) => auto.setMeters(levels));
 
 const autoState = () => ({ t: "auto", config: auto.config, status: auto.getStatus(), measuring: roomClient !== null });

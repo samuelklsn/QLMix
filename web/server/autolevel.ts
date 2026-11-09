@@ -45,6 +45,22 @@ export interface AutoStatus {
   metersAvailable: boolean;
   corrections: Record<string, number>; // channel key → dB relative to start
   feedback: boolean;
+  /** Per selected channel: what the detection sees (for the live display). */
+  mics: MicInfo[];
+}
+
+export interface MicInfo {
+  key: string;
+  label: string;
+  /** current console meter (raw 0…126), null without meters */
+  level: number | null;
+  /** noise floor of this mic (raw) */
+  floor: number | null;
+  /** level above the mic's own noise floor */
+  excess: number | null;
+  speaking: boolean;
+  on: boolean;
+  faderOpen: boolean;
 }
 
 const ck = (c: ChannelId) => `${c.kind}:${c.index}`;
@@ -57,6 +73,8 @@ const FEEDBACK_CUT_DB = 3;
 const FEEDBACK_PAUSE_MS = 10000;
 const MANUAL_PAUSE_MS = 20000;
 const WRITE_INTERVAL_MS = 200;
+/** A mic counts as "speaking" when it is this many meter steps above its own noise floor. */
+export const SPEAK_EXCESS = 8;
 
 interface RoomSample { t: number; level: number; feedback: boolean }
 interface ChannelState { baseline: number; lastWritten: number | null; pausedUntil: number; lastWriteAt: number; noRaiseUntil: number }
@@ -80,6 +98,9 @@ export class AutoLevel {
   private channels = new Map<string, ChannelState>();
   private status: AutoStatus;
   private lastTick = 0;
+  private lastActiveKey: string | null = null;
+  /** Optional hook (server log) when the detected speaker changes. */
+  onActiveChange?: (label: string | null) => void;
 
   private io: AutoIO;
 
@@ -160,8 +181,13 @@ export class AutoLevel {
       corrections: this.corrections(),
       feedback,
     };
+    const mics = this.micInfo(metersAvailable);
     const set = (message: string, level: AutoStatus["level"], active: ChannelId | null = null) => {
-      this.status = { ...base, message, level, active: active ? this.io.label(active) : null, activeKey: active ? ck(active) : null, corrections: this.corrections() };
+      this.status = { ...base, mics, message, level, active: active ? this.io.label(active) : null, activeKey: active ? ck(active) : null, corrections: this.corrections() };
+      if (this.status.activeKey !== this.lastActiveKey) {
+        this.lastActiveKey = this.status.activeKey;
+        this.onActiveChange?.(this.status.active);
+      }
     };
 
     if (!this.enabled) return set("Aus", "info");
@@ -179,7 +205,12 @@ export class AutoLevel {
       }
     }
 
-    const active = this.activeChannel(metersAvailable);
+    const active = this.activeChannel(metersAvailable, mics);
+    // A mic is speaking but its fader is closed / channel off: say so instead of silently ignoring it.
+    if (active && (!this.io.isOn(active) || (this.io.fader(active) ?? NEG_INF) <= -6000)) {
+      const why = !this.io.isOn(active) ? "Kanal ist aus (ON)" : "Fader ist ganz unten";
+      return set(`${this.io.label(active)} spricht, aber ${why} – Automatik kann diesen Kanal nicht regeln.`, "warn", active);
+    }
     if (feedback) {
       const victims = active ? [active] : this.config.channels.filter((c) => this.io.isOn(c));
       for (const c of victims) {
@@ -216,7 +247,7 @@ export class AutoLevel {
     return {
       enabled: false, message, level: "info", active: null, activeKey: null,
       room: { level: null, speech: null, floor: null, target: null, fresh: false },
-      metersAvailable: false, corrections: {}, feedback: false,
+      metersAvailable: false, corrections: {}, feedback: false, mics: [],
     };
   }
 
@@ -230,19 +261,37 @@ export class AutoLevel {
     return powerMean(recent.map((s) => s.level));
   }
 
-  private activeChannel(metersAvailable: boolean): ChannelId | null {
-    const candidates = this.config.channels.filter((c) => this.io.isOn(c) && (this.io.fader(c) ?? NEG_INF) > -6000);
-    if (!metersAvailable) return candidates.length === 1 ? candidates[0] : null;
-    let best: ChannelId | null = null;
-    let bestLevel = -Infinity;
-    for (const c of candidates) {
-      const h = this.meterHistory.get(ck(c));
-      const v = this.meters!.levels.get(ck(c));
-      if (!h || v === undefined || h.length < 5) continue;
-      const floor = percentile(h.map((x) => x.v), 0.1);
-      if (v > floor + 10 && v > bestLevel) { best = c; bestLevel = v; }
+  /**
+   * With console meters: the mic that is furthest above its *own* noise floor (so a sensitive
+   * pulpit mic with high gain is not outvoted by a mic that merely picks up the same voice).
+   * Closed/muted mics are still detected so the status can explain why nothing happens.
+   * Without meters: the only open selected mic.
+   */
+  private activeChannel(metersAvailable: boolean, mics: MicInfo[]): ChannelId | null {
+    if (!metersAvailable) {
+      const open = this.config.channels.filter((c) => this.io.isOn(c) && (this.io.fader(c) ?? NEG_INF) > -6000);
+      return open.length === 1 ? open[0] : null;
     }
-    return best;
+    let best: MicInfo | null = null;
+    for (const m of mics) {
+      if (m.speaking && (best === null || (m.excess ?? 0) > (best.excess ?? 0))) best = m;
+    }
+    return best ? this.config.channels.find((c) => ck(c) === best!.key) ?? null : null;
+  }
+
+  private micInfo(metersAvailable: boolean): MicInfo[] {
+    return this.config.channels.map((c) => {
+      const key = ck(c);
+      const h = this.meterHistory.get(key);
+      const v = metersAvailable ? this.meters!.levels.get(key) : undefined;
+      const floor = h && h.length >= 5 ? percentile(h.map((x) => x.v), 0.1) : null;
+      const excess = v !== undefined && floor !== null ? v - floor : null;
+      return {
+        key, label: this.io.label(c), level: v ?? null, floor, excess,
+        speaking: excess !== null && excess >= SPEAK_EXCESS,
+        on: this.io.isOn(c), faderOpen: (this.io.fader(c) ?? NEG_INF) > -6000,
+      };
+    });
   }
 
   private state(c: ChannelId): ChannelState | null {
