@@ -66,6 +66,10 @@ class Store {
   log = $state<LogEntry[]>([]);
   auto = $state<AutoState | null>(null);
   autoError = $state<string | null>(null);
+  /** Which action the last error belongs to (shown next to that button). */
+  autoErrorAction = $state<string | null>(null);
+  /** Short confirmation after a successful action (e.g. reference taken). */
+  autoOk = $state<string | null>(null);
 
   /** Shows raw console values next to converted ones (for calibration). */
   rawMode = $state(localStorage.getItem("qlmix.raw") === "1");
@@ -147,6 +151,8 @@ class Store {
       }
       case "autoresult":
         this.autoError = m.error ?? null;
+        this.autoErrorAction = m.error ? m.action : null;
+        this.autoOk = !m.error && m.action === "reference" ? "Ziel übernommen." : null;
         break;
     }
   }
@@ -245,6 +251,8 @@ class Store {
 
   autoAction(action: "start" | "stop" | "reference" | "config", config?: Partial<AutoConfigState>): void {
     this.autoError = null;
+    this.autoErrorAction = null;
+    this.autoOk = null;
     this.sendRaw({ t: "auto", action, config });
   }
 

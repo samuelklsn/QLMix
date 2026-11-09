@@ -63,6 +63,16 @@
   const pct = (db: number | null | undefined) => (db === null || db === undefined ? 0 : Math.max(0, Math.min(100, ((db + 80) / 80) * 100)));
   const fmt = (db: number | null | undefined) => (db === null || db === undefined ? "–" : `${db.toFixed(1)} dB`);
   const speeds = [{ v: 0.5, l: "langsam" }, { v: 1, l: "normal" }, { v: 2, l: "schnell" }];
+
+  /** What is still missing before the automatic can start – shown as a checklist. */
+  const missing = $derived.by(() => {
+    const out: string[] = [];
+    if (!cfg) return out;
+    if (!cfg.channels.length) out.push("Unter 3 die Sprecher-Mikrofone antippen.");
+    if (!st?.room.fresh) out.push("Unter 1 die Messung starten (Handy in der Raummitte).");
+    if (cfg.reference === null) out.push("Unter 2 „So soll es klingen“ drücken, während jemand normal spricht.");
+    return out;
+  });
 </script>
 
 <div class="backdrop" onclick={onclose} role="presentation"></div>
@@ -90,9 +100,15 @@
       {#if st.enabled}
         <button class="big stop" onclick={() => store.autoAction("stop")}>■ Automatik stoppen</button>
       {:else}
-        <button class="big start" onclick={() => store.autoAction("start")} disabled={!cfg.channels.length || cfg.reference === null}>▶ Automatik starten</button>
+        <button class="big start" class:notready={missing.length > 0} onclick={() => store.autoAction("start")}>▶ Automatik starten</button>
+        {#if missing.length > 0}
+          <div class="todo">
+            <b>Noch zu tun:</b>
+            <ul>{#each missing as m}<li>{m}</li>{/each}</ul>
+          </div>
+        {/if}
       {/if}
-      {#if store.autoError}<p class="err">{store.autoError}</p>{/if}
+      {#if store.autoError && store.autoErrorAction !== "reference"}<p class="err">{store.autoError}</p>{/if}
 
       <!-- 1 Measurement -->
       <section>
@@ -135,7 +151,9 @@
       <!-- 2 Target -->
       <section>
         <h3>2 · Ziel-Lautstärke</h3>
-        <button class="pill wide" onclick={() => store.autoAction("reference")}>So soll es klingen</button>
+        <button class="pill wide" class:lit={cfg.reference === null && st.room.speech !== null} onclick={() => store.autoAction("reference")}>So soll es klingen</button>
+        {#if store.autoError && store.autoErrorAction === "reference"}<p class="err">{store.autoError}</p>{/if}
+        {#if store.autoOk}<p class="okmsg">{store.autoOk}</p>{/if}
         <p class="small">Während eine Person in normaler Lautstärke spricht und es im Raum gut klingt, drücken – das wird das Ziel.
           {#if cfg.reference !== null}Aktuell: {cfg.reference.toFixed(1)} dB.{/if}</p>
         <div class="ctrl">
@@ -214,6 +232,10 @@
   .big { width: 100%; height: 54px; border-radius: 14px; font-size: 17px; font-weight: 800; margin-top: 10px; }
   .big.start { background: #34c759; color: #06260f; }
   .big.stop { background: #ff453a; color: #fff; }
+  .big.start.notready { opacity: 0.6; }
+  .todo { margin-top: 8px; background: #2a2210; border: 1px solid #ffb34055; border-radius: 10px; padding: 8px 12px; font-size: 13px; }
+  .todo ul { margin: 4px 0 0; padding-left: 18px; }
+  .okmsg { color: #34c759; font-size: 13px; margin: 0; }
   .pill.wide { width: 100%; height: 44px; }
   .link { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
   .box { background: #1d2127; border-radius: 12px; padding: 10px 12px; font-size: 13px; line-height: 1.45; }
