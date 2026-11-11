@@ -15,8 +15,11 @@
 
   let track: HTMLDivElement;
   let dragging = $state(false);
-  let startY = 0;
-  let startPos = 0;
+  let lastY = 0;
+  let lastT = 0;
+  let dragPos = 0;
+  let moved = 0;
+  let lastTap = 0;
   let pointerId: number | null = null;
 
   const CAP = 44; // cap height in px
@@ -24,12 +27,32 @@
   const travel = $derived(Math.max(1, height - CAP));
   const pos = $derived(levelToPosition(value));
 
+  // Peak hold: the highest level of the last 1.5 s stays visible as a line.
+  let peak = $state(0);
+  let peakAt = 0;
+  $effect(() => {
+    const m = meter ?? 0;
+    const now = performance.now();
+    if (m >= peak || now - peakAt > 1500) { peak = m; peakAt = now; }
+  });
+
   function down(e: PointerEvent) {
     if (disabled || pointerId !== null) return;
+    // Double tap → 0 dB (like the "nominal" detent on a hardware fader).
+    const now = performance.now();
+    if (now - lastTap < 320) {
+      lastTap = 0;
+      onchange(0);
+      e.preventDefault();
+      return;
+    }
+    lastTap = now;
     pointerId = e.pointerId;
     track.setPointerCapture(e.pointerId);
-    startY = e.clientY;
-    startPos = pos;
+    lastY = e.clientY;
+    lastT = now;
+    dragPos = pos;
+    moved = 0;
     dragging = true;
     ontouch?.(true);
     e.preventDefault();
@@ -37,9 +60,17 @@
 
   function move(e: PointerEvent) {
     if (e.pointerId !== pointerId) return;
-    const fine = e.altKey ? 0.25 : 1;
-    const p = startPos - ((e.clientY - startY) / travel) * fine;
-    const raw = positionToLevel(p);
+    const now = performance.now();
+    const dy = e.clientY - lastY;
+    const speed = Math.abs(dy) / Math.max(1, now - lastT); // px per ms
+    lastY = e.clientY;
+    lastT = now;
+    moved += Math.abs(dy);
+    if (moved > 8) lastTap = 0; // a drag is not a tap
+    // Fine mode: slow movements (or ⌥) move the fader four times less – precise trims of 0.1 dB.
+    const fine = e.altKey ? 0.25 : Math.min(1, Math.max(0.25, speed / 0.6));
+    dragPos = Math.min(1, Math.max(0, dragPos - (dy / travel) * fine));
+    const raw = positionToLevel(dragPos);
     if (raw !== value) onchange(raw);
   }
 
@@ -107,6 +138,7 @@
     {#if meter !== null}
       <div class="meter" style="top: {CAP / 2}px; bottom: {CAP / 2}px">
         <div class="cover" style="height: {100 - Math.round(meter * 100)}%"></div>
+        {#if peak > 0.02}<div class="peak" class:hot={peak >= 0.97} style="bottom: {peak * 100}%"></div>{/if}
       </div>
     {/if}
     <div class="cap" class:active={dragging} style="transform: translateY({(1 - pos) * travel}px); --accent: {accent}">
@@ -161,8 +193,8 @@
   .meter {
     position: absolute;
     right: 0;
-    width: 4px;
-    border-radius: 2px;
+    width: 5px;
+    border-radius: 2.5px;
     overflow: hidden;
     /* full-height gradient; the cover hides the part above the current level */
     background: linear-gradient(to top, var(--on) 0%, var(--on) 62%, var(--cue) 80%, var(--send) 92%, var(--danger) 100%);
@@ -172,8 +204,17 @@
     top: 0;
     width: 100%;
     background: var(--sunken);
-    transition: height 80ms linear;
+    transition: height 60ms linear;
   }
+  .meter .peak {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    margin-bottom: -1px;
+    background: var(--label);
+  }
+  .meter .peak.hot { background: var(--danger); }
   .cap {
     position: absolute;
     top: 0;

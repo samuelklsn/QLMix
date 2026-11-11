@@ -9,6 +9,7 @@
   import { dynaSlots } from "../../shared/ql-params.ts";
   import Sheet from "./Sheet.svelte";
   import Icon from "./Icon.svelte";
+  import ChannelHead from "./ChannelHead.svelte";
 
   const COLOR_NAMES: Record<string, string> = {
     Blue: "Blau", Orange: "Orange", Yellow: "Gelb", Purple: "Lila", Cyan: "Cyan", Magenta: "Magenta", Red: "Rot", Green: "Grün", Off: "Keine Farbe",
@@ -19,8 +20,20 @@
     channels: ChannelId[];
     onclose: () => void;
     onselect: (c: ChannelId) => void;
+    /** side panel next to the mixer instead of a modal sheet */
+    docked?: boolean;
   }
-  let { channel, channels, onclose, onselect }: Props = $props();
+  let { channel, channels, onclose, onselect, docked = false }: Props = $props();
+
+  // Swipe left/right on the channel title to change channel.
+  let swipeX: number | null = null;
+  const swipeStart = (e: PointerEvent) => { swipeX = e.clientX; };
+  const swipeEnd = (e: PointerEvent) => {
+    if (swipeX === null) return;
+    const dx = e.clientX - swipeX;
+    swipeX = null;
+    if (Math.abs(dx) > 50) step(dx < 0 ? 1 : -1);
+  };
 
   let chosenTab = $state<"eq" | "dyna" | "channel">("eq");
   const withDyna = $derived(store.eqSchema?.kind === "ql" && dynaSlots(channel.kind) > 0);
@@ -52,17 +65,19 @@
   }
 </script>
 
-<Sheet title="Kanal {channelLabel(channel)}" {onclose}>
+<Sheet title="Kanal {channelLabel(channel)}" {onclose} {docked} width={docked ? 460 : 640}>
   {#snippet header()}
     <div class="chhead">
       <button class="icon-btn" onclick={() => step(-1)} aria-label="Vorheriger Kanal"><Icon name="back" /></button>
-      <div class="chtitle">
+      <div class="chtitle" onpointerdown={swipeStart} onpointerup={swipeEnd} onpointercancel={() => (swipeX = null)} role="presentation">
         <span class="chnum">{channelLabel(channel)}</span>
         <span class="chname" style="background: {COLOR_HEX[color]}; color: {darkTextColors.includes(color) ? '#111' : '#fff'}">{name || channelLabel(channel)}</span>
       </div>
       <button class="icon-btn" onclick={() => step(1)} aria-label="Nächster Kanal"><Icon name="forward" /></button>
     </div>
   {/snippet}
+
+  <ChannelHead {channel} />
 
   {#if hasEQ(channel.kind) || withDyna}
     <div class="segmented" role="tablist" aria-label="Bereich">
@@ -126,7 +141,7 @@
 
 <style>
   .chhead { display: flex; align-items: center; gap: var(--s3); }
-  .chtitle { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+  .chtitle { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; touch-action: pan-y; }
   .chnum { font-size: var(--fs-caption); font-weight: 600; color: var(--label-2); letter-spacing: 0.02em; }
   .chname {
     padding: 4px 12px;

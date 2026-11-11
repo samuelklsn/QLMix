@@ -12,14 +12,16 @@
     /** optional custom header content (replaces title/subtitle) */
     header?: Snippet;
     children: Snippet;
+    /** docked: a side panel next to the mixer (iPad/desktop) instead of a modal sheet */
+    docked?: boolean;
   }
-  let { title, subtitle, badge, width = 640, onclose, header, children }: Props = $props();
+  let { title, subtitle, badge, width = 640, onclose, header, children, docked = false }: Props = $props();
 </script>
 
 <svelte:window onkeydown={(e) => { if (e.key === "Escape") onclose(); }} />
 
-<div class="backdrop" onclick={onclose} role="presentation"></div>
-<div class="sheet" role="dialog" aria-modal="true" aria-label={title} style="--w: {width}px">
+{#if !docked}<div class="backdrop" onclick={onclose} role="presentation"></div>{/if}
+<div class="sheet" class:docked role={docked ? "complementary" : "dialog"} aria-modal={docked ? undefined : true} aria-label={title} style="--w: {width}px">
   <header>
     {#if header}
       <div class="custom">{@render header()}</div>
@@ -72,6 +74,24 @@
       animation: pop 220ms var(--ease);
     }
   }
+  /* Docked: part of the page layout, the mixer stays visible and live next to it. */
+  .sheet.docked {
+    position: relative;
+    z-index: auto;
+    left: auto;
+    top: auto;
+    bottom: auto;
+    translate: none;
+    width: var(--w);
+    max-height: none;
+    height: 100%;
+    flex: none;
+    border-radius: var(--r-lg);
+    background: var(--bg);
+    box-shadow: inset 0 0 0 1px var(--separator);
+    padding-bottom: 0;
+    animation: slide 220ms var(--ease);
+  }
   header {
     display: flex;
     align-items: flex-start;
@@ -98,5 +118,6 @@
   }
   @keyframes fade { from { opacity: 0; } }
   @keyframes rise { from { transform: translateY(32px); opacity: 0; } }
+  @keyframes slide { from { transform: translateX(24px); opacity: 0; } }
   @keyframes pop { from { transform: scale(0.97); opacity: 0; } }
 </style>

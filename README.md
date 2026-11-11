@@ -12,8 +12,10 @@ des Pults; bedient wird **im Browser** auf jedem Handy, Tablet oder Computer.
 * **Dynamics** (Gate/Kompressor …) und **Premium Rack** (Portico, Dynamic EQ …) – *in Vorbereitung, Abgleich am Pult folgt*
 * läuft als App auf dem Home-Bildschirm (iPhone/iPad), optional mit PIN
 * **Neues Design in 1.2**: klarer, besser lesbar und auf Handy, Tablet und Computer gleich aufgeräumt
+* **Neu in 1.3**: Kanal-Bereich neben dem Mischpult (iPad/Computer) mit Live-Pegel, Fader, ON/CUE und Gain direkt beim EQ;
+  Pegelanzeige für alle Eingangskanäle mit Spitzenwert; Doppeltippen auf einen Fader = 0 dB, langsames Ziehen = fein
 
-<p align="center"><img src="docs/img/web/mixer-desktop.png" width="820" alt="QLMix im Browser: Kanalzüge mit Namen, ON, CUE und Fadern"></p>
+<p align="center"><img src="docs/img/web/mixer-desktop.png" width="820" alt="QLMix im Browser: Kanalzüge und daneben der Kanal-Bereich mit Pegel, Fader und EQ"></p>
 
 <p align="center">
   <img src="docs/img/web/eq-phone.png" width="250" alt="EQ eines Kanals am iPhone">
@@ -104,6 +106,13 @@ Die Einstellungen (Pult-IP, PIN) bleiben erhalten. Auf den Handys danach die Sei
 
 > **EQ-Hinweis:** Läuft auf demselben PC auch der Yamaha **QL Editor**, stören sich beide bei der EQ-Steuerung –
 > den Editor dann schließen. StageMix auf dem iPad stört nicht.
+
+### Eigene Fader-Ebenen vom Pult (in Vorbereitung)
+
+QLMix soll die Fader-Reihenfolge anzeigen, die am Pult eingerichtet ist (Custom Fader Bank). Dafür braucht es einmal Daten
+vom echten Pult: In QLMix **⚙︎ Einstellungen → Diagnose → „Fader-Ebenen vom Pult lesen“** drücken (dauert bis zu einer
+halben Minute), dann das Ergebnis mit **Kopieren** weitergeben – zusammen mit einem Foto der Custom-Ebene am Pult.
+Das Ergebnis liegt außerdem auf dem Server-PC in `C:\QLMix\web\faderbank-probe.txt`.
 
 Weitere Details zur Web-Version (Bedienung, Musiker-Links, PIN, Mac/Linux): **[web/README.md](web/README.md)**
 

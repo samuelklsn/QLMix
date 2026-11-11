@@ -9,3 +9,4 @@ build/
 /web/qlmix.log
 /web/windows/run-server.cmd
 /web/certs/
+/web/faderbank-probe.txt

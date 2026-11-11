@@ -24,6 +24,7 @@
   let autoOpen = $state(new URLSearchParams(location.search).has("auto"));
   let pin = $state("");
   let width = $state(1000);
+  let height = $state(800);
 
   $effect(() => {
     if (lockedMix !== null) return; // musician links don't change the saved view
@@ -34,6 +35,9 @@
 
   const model = $derived(store.model);
   const wide = $derived(width >= 720);
+  // iPad / desktop: the channel panel sits next to the mixer (like the console's Selected Channel) instead of covering it.
+  const dockable = $derived(width >= 1000 && height >= 600);
+  const isSel = (c: ChannelId) => sheet !== null && sheet.kind === c.kind && sheet.index === c.index;
   const mixMode = $derived(mode === "monitor" ? mix : null);
 
   interface Bank { id: string; label: string; channels: ChannelId[] }
@@ -90,7 +94,7 @@
   });
 </script>
 
-<svelte:window bind:innerWidth={width} />
+<svelte:window bind:innerWidth={width} bind:innerHeight={height} />
 
 <div class="app">
   <header class="toolbar">
@@ -150,22 +154,27 @@
     {/each}
   </div>
 
+  <div class="workspace">
   <main class="mixer" class:dim={!store.connected}>
     <div class="strips" bind:this={scroller}>
       {#if current}
         {#each current.channels as c (channelKey(c))}
-          <Strip channel={c} mix={c.kind === "input" || c.kind === "stereoInput" ? mixMode : null} onopen={openSheet} />
+          <Strip channel={c} mix={c.kind === "input" || c.kind === "stereoInput" ? mixMode : null} onopen={openSheet} selected={dockable && isSel(c)} />
         {/each}
       {/if}
     </div>
     {#if masters.length}
       <div class="masters">
         {#each masters as c (channelKey(c))}
-          <Strip channel={c} master onopen={openSheet} />
+          <Strip channel={c} master onopen={openSheet} selected={dockable && isSel(c)} />
         {/each}
       </div>
     {/if}
   </main>
+  {#if sheet && dockable}
+    <ChannelSheet docked channel={sheet} channels={allForSheet} onclose={() => (sheet = null)} onselect={(c) => (sheet = c)} />
+  {/if}
+  </div>
 
   {#if !model}
     <div class="empty">
@@ -184,7 +193,7 @@
   {/if}
 </div>
 
-{#if sheet}
+{#if sheet && !dockable}
   <ChannelSheet channel={sheet} channels={allForSheet} onclose={() => (sheet = null)} onselect={(c) => (sheet = c)} />
 {/if}
 {#if settings}
@@ -270,6 +279,11 @@
   .tool :global(svg) { color: var(--label-2); }
   .tool.auto-on { background: var(--on); color: var(--on-ink); }
   .tool.auto-on :global(svg) { color: var(--on-ink); }
+  /* Phones: icon-only tool buttons, so the console name stays readable. */
+  @media (max-width: 430px) {
+    .tool { width: var(--h-compact); padding: 0; justify-content: center; }
+    .tool span { display: none; }
+  }
 
   .row { padding: 0 var(--s4) var(--s2); }
 
@@ -302,8 +316,9 @@
   .locked { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-callout); color: var(--label-2); min-height: var(--h-compact); }
   .locked b { color: var(--send); }
 
-  /* mixer */
-  .mixer { flex: 1; min-height: 0; display: flex; gap: var(--strip-gap); padding: 0 var(--s2) var(--s2); }
+  /* mixer + docked channel panel */
+  .workspace { flex: 1; min-height: 0; display: flex; gap: var(--s2); padding: 0 var(--s2) var(--s2) 0; }
+  .mixer { flex: 1; min-width: 0; min-height: 0; display: flex; gap: var(--strip-gap); padding: 0 0 0 var(--s2); }
   .mixer.dim { filter: saturate(0.4); pointer-events: none; }
   .strips {
     flex: 1;

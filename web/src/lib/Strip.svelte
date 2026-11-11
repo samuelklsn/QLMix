@@ -12,8 +12,10 @@
     mix?: number | null;
     master?: boolean;
     onopen?: (c: ChannelId) => void;
+    /** shown in the docked channel panel */
+    selected?: boolean;
   }
-  let { channel, mix = null, master = false, onopen }: Props = $props();
+  let { channel, mix = null, master = false, onopen, selected = false }: Props = $props();
 
   const sendMode = $derived(mix !== null);
   const level = $derived(store.level(channel, mix));
@@ -39,7 +41,7 @@
   }
 </script>
 
-<div class="strip" class:send={sendMode} class:cue class:off={!on} class:master>
+<div class="strip" class:send={sendMode} class:cue class:off={!on} class:master class:selected>
   <div class="num">{channelLabel(channel)}</div>
   <button class="name" style="background: {COLOR_HEX[color]}; color: {darkTextColors.includes(color) ? '#111' : '#fff'}"
     onclick={() => onopen?.(channel)} disabled={!enabled || !onopen} title={onopen ? `${name} – EQ, Dynamics, Gain` : name}>
@@ -82,6 +84,8 @@
   .strip.send { background: var(--strip-send-bg); }
   .strip.master { background: var(--strip-master-bg); }
   .strip.cue { box-shadow: inset 0 0 0 1.5px var(--cue); }
+  .strip.selected { background: var(--surface-2); box-shadow: inset 0 0 0 2px var(--accent-text); }
+  .strip.selected.cue { box-shadow: inset 0 0 0 2px var(--accent-text), inset 0 0 0 3.5px var(--cue); }
   .num {
     text-align: center;
     font-size: var(--fs-caption2);

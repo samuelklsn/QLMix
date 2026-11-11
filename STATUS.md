@@ -1,6 +1,6 @@
 # STATUS – QLMix
 
-Stand: 2026-11-09 · aktuelle Version **1.2.0** (Release `v1.2.0`, Commit `9fb59da`)
+Stand: 2026-11-11 · Version **1.3.0** gebaut, noch nicht veröffentlicht (letztes Release `v1.2.0`)
 
 ## Fertig
 
@@ -32,15 +32,27 @@ Stand: 2026-11-09 · aktuelle Version **1.2.0** (Release `v1.2.0`, Commit `9fb59
 - Lesbarkeit und Kontrast verbessert, Fader per Tastatur bedienbar, ARIA.
 - README mit neuen Screenshots (`docs/img/web/`).
 
+**1.3.0 (gebaut, noch nicht veröffentlicht)**
+- Kanal-Bereich neben dem Mischpult auf iPad/Computer, das Mischpult bleibt sichtbar und live.
+- Kanal-Kopf mit Live-Pegel, Fader, ON, CUE und Gain direkt über EQ/Dynamics.
+- Eingangspegel für alle Kanalzüge (vorher am echten QL keine Eingangs-Meter, weil RCP sie nicht liefert).
+- Spitzenwert-Anzeige, Doppeltippen = 0 dB, Feinmodus beim langsamen Ziehen, Wischen zum Kanalwechsel.
+- Diagnose „Fader-Ebenen vom Pult lesen“ (Custom Fader Bank) in den Einstellungen.
+- README-Screenshots erneuert.
+
 **Sonstiges**
 - 15 Web-Tests grün, `svelte-check` 0 Fehler.
 
 ## In Arbeit
 
-- Nichts offen im Code. Alle Änderungen sind committet und gepusht.
+- 1.3.0: Commit, Push und Release warten auf Samuels OK.
 - Die Raum-Automatik ist in der **Testphase** (Badge „Test“ im UI). Der Nutzer testet sie im echten Raum.
 
 ## Nächste Schritte
+
+- **Custom Fader Bank fertig bauen.** Samuel drückt am echten Pult „Fader-Ebenen vom Pult lesen“ und schickt das Ergebnis plus Foto der Custom-Ebene. Daraus den Aufbau ableiten, dann eigene Ebenen in der Bank-Leiste anzeigen und bei Änderungen am Pult nachladen.
+  - Offene Frage an Samuel: Meint er die Custom Fader Bank (pro Benutzer), oder eine Reihenfolge pro Szene? Er hat es noch nicht beantwortet.
+- **Samuel fragen, welche Funktionen ihm am meisten fehlen.** Vorschläge waren Mute-Gruppen, Pan, Sends eines Kanals auf alle Mixe, Szenen speichern. Er hat noch nicht geantwortet.
 
 - 1.2.0 auf dem Windows-PC einspielen (`update.cmd`) und am echten Pult und iPhone prüfen. Die Rückmeldung des Nutzers steht noch aus.
 - **Raum-Automatik im echten Raum testen.**
@@ -53,6 +65,7 @@ Stand: 2026-11-09 · aktuelle Version **1.2.0** (Release `v1.2.0`, Commit `9fb59
 - **Premium Rack abgleichen:**
   - Pro Modul (Portico 5033/5043, Dynamic EQ …) mit der Kalibrierhilfe ermitteln, welcher Parameter-Index welcher Regler ist.
   - Dann `RACK_MODULES` in `ql-params.ts` füllen; die Liste ist aktuell leer.
+- Weitere Messpunkte der Eingangsmeter (nach EQ, nach Fader …) zuordnen. Dazu am Pult vergleichen.
 - Optional: PDF-Anleitung auf die Web-Version umstellen. Sie beschreibt noch die Mac-App.
 
 ## Bekannte Probleme / Offene Fragen
@@ -61,6 +74,7 @@ Stand: 2026-11-09 · aktuelle Version **1.2.0** (Release `v1.2.0`, Commit `9fb59
   - Das Pult bedient pro Client-IP nur die neueste Verbindung.
   - Ein QL Editor auf demselben PC wie der QLMix-Server bricht deshalb die EQ-Verbindung (und umgekehrt).
   - Workaround: Editor schließen oder auf einem anderen Rechner nutzen.
+- Die Diagnose fragt bis zu ca. 36 000 Adressen ab (im Simulator ca. 20 s). Am echten Pult ist noch nicht getestet, ob das die Verbindung kurz bremst.
 - Das Pult pusht EQ-Änderungen nicht. Der Server fragt ab, daher erscheinen Änderungen am Pult mit kurzer Verzögerung.
 - Die Dynamics-Anzeigen sind **ungefähr** (markiert mit „≈“). Die Regler funktionieren, die Einheiten können abweichen.
 - Raum-Automatik:

@@ -16,12 +16,14 @@ import { ConsoleLink } from "./console-link.ts";
 import { QLLink } from "./ql-link.ts";
 import { AutoLevel, type AutoConfig, DEFAULT_AUTO_CONFIG } from "./autolevel.ts";
 import { ensureTls } from "./tls.ts";
+import { CUSTOM_FADER_ELEMENTS } from "../shared/ql-params.ts";
 import {
   type ChannelId, type Key, type Kind, type Value, KINDS, PREFIX, channelLabel, channelParamKey, channelWriteKeys,
 } from "../shared/rcp.ts";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DIST = path.join(ROOT, "dist");
+const VERSION: string = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")).version;
 const CONFIG_FILE = path.join(ROOT, "config.json");
 
 // ---------------------------------------------------------------- config
@@ -190,7 +192,18 @@ const auto = new AutoLevel({
 }, config.autolevel);
 let roomClient: Client | null = null;
 auto.onActiveChange = (label) => { if (auto.enabled) console.log(`[Auto] aktives Mikro: ${label ?? "keins"}`); };
-ql.on("inmeters", (levels: Map<string, number>) => auto.setMeters(levels));
+ql.on("inmeters", (levels: Map<string, number>) => {
+  auto.setMeters(levels);
+  // RCP only meters MIX/MTX on CL/QL – input strips get the editor-protocol input meters (pre-EQ).
+  const input: number[] = [], stereo: number[] = [];
+  for (const [k, v] of levels) {
+    const [kind, i] = k.split(":");
+    if (kind === "input") input[Number(i)] = v;
+    else if (kind === "stereoInput") stereo[Number(i)] = v;
+  }
+  pushMeters("input", input);
+  pushMeters("stereoInput", stereo);
+});
 
 const autoState = () => ({ t: "auto", config: auto.config, status: auto.getStatus(), measuring: roomClient !== null });
 let lastAuto = "";
@@ -289,6 +302,7 @@ wss.on("connection", (ws) => {
         break;
       case "disconnect": link.disconnect(); break;
       case "log": send(client, { t: "log", entries: logBuffer.slice(-200) }); break;
+      case "probeFaderBanks": probeFaderBanks(client); break;
     }
   });
   ws.on("close", () => {
@@ -315,19 +329,55 @@ link.on("param", (k: Key, v: Value) => queueParam(k, v));
 ql.on("param", (k: Key, v: Value) => queueParam(k, v));
 ql.on("status", () => {
   if (ql.status === "connected") console.log("[Pult] EQ-Verbindung (Port 50000) aktiv");
+  else if (meters.delete("input") || meters.delete("stereoInput")) pushMeters("stereoInput", []);
   broadcast(info());
 });
 
 const meters = new Map<string, number[]>();
 let meterTimer: NodeJS.Timeout | undefined;
-link.on("meter", (kind: string, values: number[]) => {
+function pushMeters(kind: string, values: number[]): void {
   meters.set(kind, values);
   meterTimer ??= setTimeout(() => {
     meterTimer = undefined;
     broadcast({ t: "m", m: Object.fromEntries(meters) });
   }, 80);
-});
+}
+link.on("meter", (kind: string, values: number[]) => pushMeters(kind, values));
 link.on("info", () => broadcast(info()));
+
+// ---------------------------------------------------------------- custom fader bank (diagnosis)
+
+let probing = false;
+async function probeFaderBanks(client: Client): Promise<void> {
+  if (probing) return;
+  if (!ql.available) { send(client, { t: "probe", error: "Keine Editor-Verbindung zum Pult (Port 50000)." }); return; }
+  probing = true;
+  console.log("[Pult] Lese Fader-Ebenen (Custom Fader Bank) …");
+  try {
+    const elems = CUSTOM_FADER_ELEMENTS.map((e) => e.elem);
+    const rows = await ql.probe(elems);
+    const name = (n: number) => CUSTOM_FADER_ELEMENTS.find((e) => e.elem === n)?.name ?? String(n);
+    const lines = [`QLMix ${VERSION} · ${link.summary().product ?? "?"} ${link.summary().firmware ?? ""} · ${new Date().toISOString()}`, `Antworten: ${rows.length}`];
+    for (const e of CUSTOM_FADER_ELEMENTS) {
+      const r = rows.filter((x) => x.elem === e.elem);
+      lines.push("", `# ${e.elem} ${e.name} (${r.length} Werte)`);
+      // one line per index: "idx: ch=value ch=value …" (only non-zero values, to stay readable)
+      const byIdx = new Map<number, string[]>();
+      for (const x of r) if (x.value !== 0) (byIdx.get(x.index) ?? byIdx.set(x.index, []).get(x.index)!).push(`${x.ch}=${x.value}`);
+      const indices = [...new Set(r.map((x) => x.index))];
+      lines.push(`  Indizes: ${indices.join(",") || "–"} · Kanäle: ${[...new Set(r.map((x) => x.ch))].join(",") || "–"}`);
+      for (const [i, vals] of byIdx) lines.push(`  ${i}: ${vals.join(" ")}`);
+    }
+    const text = lines.join("\n");
+    fs.writeFileSync(path.join(ROOT, "faderbank-probe.txt"), text + "\n");
+    console.log(`[Pult] Fader-Ebenen gelesen: ${rows.length} Werte → faderbank-probe.txt`);
+    send(client, { t: "probe", text, count: rows.length, name: rows.length ? name(rows[0].elem) : "" });
+  } catch (err) {
+    send(client, { t: "probe", error: String(err) });
+  } finally {
+    probing = false;
+  }
+}
 
 // ---------------------------------------------------------------- start
 

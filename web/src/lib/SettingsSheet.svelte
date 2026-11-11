@@ -50,6 +50,11 @@
     clearTimeout(copiedTimer);
     copiedTimer = setTimeout(() => (copied = null), 1600);
   }
+  let probeCopied = $state(false);
+  async function copyText(text: string) {
+    try { await navigator.clipboard.writeText(text); probeCopied = true; setTimeout(() => (probeCopied = false), 1600); }
+    catch { prompt("Text kopieren:", text); }
+  }
   const sceneText = $derived(info?.scene !== undefined ? String(info.scene).padStart(3, "0") : "–");
 </script>
 
@@ -125,6 +130,19 @@
         <button class="pill" onclick={() => (showLog = !showLog)}>{showLog ? "Log ausblenden" : "Log anzeigen"}</button>
         <button class="pill" class:lit={store.rawMode} aria-pressed={store.rawMode} onclick={() => store.setRawMode(!store.rawMode)}>Rohwerte {store.rawMode ? "an" : "aus"}</button>
       </div>
+      <button class="pill" onclick={() => store.probeFaderBanks()} disabled={!store.connected || store.probe.running}>
+        {store.probe.running ? "Lese Fader-Ebenen …" : "Fader-Ebenen vom Pult lesen"}
+      </button>
+      {#if store.probe.error}<p class="err t-footnote" role="alert">{store.probe.error}</p>{/if}
+      {#if store.probe.text}
+        <div class="probe">
+          <div class="probe-head">
+            <span class="t-footnote">{store.probe.count} Werte gelesen – bitte als Screenshot oder kopiert schicken.</span>
+            <button class="pill" onclick={() => copyText(store.probe.text!)}>{probeCopied ? "Kopiert" : "Kopieren"}</button>
+          </div>
+          <pre class="log">{store.probe.text}</pre>
+        </div>
+      {/if}
       {#if showLog}
         <pre class="log">{store.log.map((e) => `${new Date(e.t).toLocaleTimeString()} ${e.d === "tx" ? "→" : e.d === "rx" ? "←" : "•"} ${e.s}`).join("\n")}</pre>
       {/if}
@@ -162,6 +180,9 @@
   .diag { display: grid; grid-template-columns: auto 1fr; gap: var(--s1) var(--s4); margin: 0; font-size: var(--fs-callout); }
   .diag dt { color: var(--label-2); }
   .diag dd { margin: 0; text-align: right; }
+  .err { color: var(--danger-text); }
+  .probe { display: flex; flex-direction: column; gap: var(--s2); }
+  .probe-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); }
   .log {
     max-height: 240px; overflow: auto; margin: 0;
     font: 11px / 1.5 var(--font-mono); color: var(--label-2);

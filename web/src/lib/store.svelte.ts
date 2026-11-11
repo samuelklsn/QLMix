@@ -72,6 +72,9 @@ class Store {
   /** Short confirmation after a successful action (e.g. reference taken). */
   autoOk = $state<string | null>(null);
 
+  /** Result of the custom-fader-bank diagnosis. */
+  probe = $state<{ running: boolean; text?: string; error?: string; count?: number }>({ running: false });
+
   /** Shows raw console values next to converted ones (for calibration). */
   rawMode = $state(localStorage.getItem("qlmix.raw") === "1");
 
@@ -150,6 +153,9 @@ class Store {
         this.auto = a;
         break;
       }
+      case "probe":
+        this.probe = { running: false, text: m.text, error: m.error, count: m.count };
+        break;
       case "autoresult":
         this.autoError = m.error ?? null;
         this.autoErrorAction = m.error ? m.action : null;
@@ -288,6 +294,10 @@ class Store {
   connectConsole(host: string): void { this.sendRaw({ t: "connect", host }); }
   disconnectConsole(): void { this.sendRaw({ t: "disconnect" }); }
   requestLog(): void { this.sendRaw({ t: "log" }); }
+  probeFaderBanks(): void {
+    this.probe = { running: true };
+    this.sendRaw({ t: "probeFaderBanks" });
+  }
 }
 
 export const store = new Store();

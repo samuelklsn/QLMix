@@ -46,6 +46,7 @@ export class QLLink extends EventEmitter {
   private watched = new Map<string, ChannelId>();
   private watchedRacks = new Set<number>();
   private gotAnswer = false;
+  private probeSink?: (elem: number, index: number, ch: number, value: number) => void;
 
   get available(): boolean {
     return this.status === "connected" && this.gotAnswer;
@@ -193,6 +194,50 @@ export class QLLink extends EventEmitter {
     this.socket.write(Buffer.from(msgs.flat()));
   }
 
+  // ------------------------------------------------------------ probing unknown elements
+
+  /**
+   * Reads elements whose layout is not known yet (e.g. the custom fader bank) and returns every
+   * answered (index, ch) → value. Stage 1 scans index 0…maxIndex at ch 0 and ch 0…maxCh at index 0;
+   * stage 2 reads the full grid of the answered indices × channels. Unanswered addresses are skipped
+   * by the console, so the result shows the real shape of each element.
+   */
+  async probe(elems: number[], maxIndex = 47, maxCh = 127): Promise<{ elem: number; index: number; ch: number; value: number }[]> {
+    if (this.status !== "connected" || this.probeSink) return [];
+    const found = new Map<string, { elem: number; index: number; ch: number; value: number }>();
+    const wanted = new Set(elems);
+    this.probeSink = (elem, index, ch, value) => { if (wanted.has(elem)) found.set(`${elem}:${index}:${ch}`, { elem, index, ch, value }); };
+    const settle = async () => {
+      let last = -1;
+      for (let i = 0; i < 200; i++) { // up to ~40 s
+        await new Promise((r) => setTimeout(r, 200));
+        if (this.queue.length === 0 && found.size === last) break;
+        last = found.size;
+      }
+    };
+    try {
+      const stage1: number[][] = [];
+      for (const e of elems) {
+        for (let i = 0; i <= maxIndex; i++) stage1.push(qlSysex(e, i, 0));
+        for (let c = 1; c <= maxCh; c++) stage1.push(qlSysex(e, 0, c));
+      }
+      this.enqueue(stage1);
+      await settle();
+      const stage2: number[][] = [];
+      for (const e of elems) {
+        const rows = [...found.values()].filter((f) => f.elem === e);
+        // Cap the grid (32 indices × 64 channels) in case the console answers every address.
+        const idx = [...new Set(rows.filter((f) => f.ch === 0).map((f) => f.index))].slice(0, 32);
+        const chs = [...new Set(rows.filter((f) => f.index === 0).map((f) => f.ch))].slice(0, 64);
+        for (const i of idx) for (const c of chs) if (!found.has(`${e}:${i}:${c}`)) stage2.push(qlSysex(e, i, c));
+      }
+      if (stage2.length) { this.enqueue(stage2); await settle(); }
+    } finally {
+      this.probeSink = undefined;
+    }
+    return [...found.values()].sort((a, b) => a.elem - b.elem || a.index - b.index || a.ch - b.ch);
+  }
+
   // ------------------------------------------------------------ responses
 
   private receive(d: Buffer): void {
@@ -210,6 +255,7 @@ export class QLLink extends EventEmitter {
       }
       const change = qlParseChange(m);
       if (!change) continue; // other meters, heartbeats (0x7f), …
+      this.probeSink?.(change.elem, change.index, change.ch, change.value);
       if (!this.gotAnswer) {
         this.gotAnswer = true;
         this.emit("status");

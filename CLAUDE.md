@@ -22,7 +22,7 @@
 - **Mac-App** (Swift, `Sources/QLMix`): der erste Prototyp. Sie kann kein EQ über RCP, weil das Pult EQ nicht über RCP anbietet.
   - TODO: klären, ob die Mac-App noch weiterentwickelt werden soll. Seit der Web-Version wurde sie nicht mehr angefasst.
 - **Repo:** https://github.com/samuelklsn/QLMix (öffentlich, Branch `main`)
-  - Aktuelle Version **1.2.0**, Releases als GitHub-Release mit Tag `vX.Y.Z`.
+  - Aktuelle Version **1.3.0**, Releases als GitHub-Release mit Tag `vX.Y.Z`.
 
 ## Tech-Stack
 
@@ -53,6 +53,9 @@
   - Es antwortet nur der **neuesten** Verbindung pro Client-IP. Ein QL Editor auf demselben PC wie der Server stört deshalb.
   - Es pusht EQ-Änderungen nicht, deshalb fragt der Server zyklisch ab.
   - Gelesene Werte hinken Schreibbefehlen hinterher. Der Server hält eingehende Werte nach einem Schreiben 1,5 s zurück.
+  - **Meter:** RCP liefert auf CL/QL nur MIX- und MTX-Pegel (`METER_SOURCES`). Eingangspegel kommen über das Editor-Protokoll (Anfrage `INPUT_METER_REQUEST` alle 5 s, Punkt 1 = vor EQ). Der Server leitet sie seit 1.3 als `meters.input`/`meters.stereoInput` an die Browser weiter. Die übrigen 9 Messpunkte pro Kanal sind noch nicht zugeordnet.
+  - **Element-Nummern:** Die n-te `k…`-Bezeichnung in der Namensliste des QL-Editor-Binarys ist Element n (geprüft an 61–862). Die Liste erzeugt `strings -a -t x "/Applications/QL Editor.app/Contents/MacOS/QL Editor"`, gefiltert auf ` k[A-Z][A-Za-z0-9_]+$` im Bereich 0x7b2a00–0x7b9000. Zeile n+1 = Element n.
+  - **Custom Fader Bank:** Elemente 359–368 (`SetupCustomBlock…CL5/CL3/CL1`) und 517–533 (`BackupCustomFader…`, `BackupCustomBlock…`), stehen in `CUSTOM_FADER_ELEMENTS`. Der Aufbau (Index/Kanal/Wert) ist noch unbekannt. Die Diagnose in den Einstellungen liest ihn aus (`QLLink.probe`, Ergebnis auch in `web/faderbank-probe.txt`).
 
 **Swift (Mac-App und Simulator)**
 - SwiftPM, Swift 6, macOS 15.
@@ -108,12 +111,15 @@ web/
 
 **Komponenten in `web/src/lib/`**
 - `Sheet.svelte`: gemeinsames Dialogfenster.
-  - Props: `title`, `subtitle?`, `badge?`, `width?`, `onclose`, Snippets `header?` und `children`.
+  - Props: `title`, `subtitle?`, `badge?`, `width?`, `docked?` (Seitenbereich statt Fenster), `onclose`, Snippets `header?` und `children`.
   - Escape schließt das Fenster.
 - `Icon.svelte`: SVG-Icons (gear, close, back, forward, play, stop, rack, wave, lock, check, warning). Prop `name`, optional `size`.
 - `Strip.svelte`: Kanalzug (Nummer, Namensschild, ON, CUE, Wert, Fader).
-- `Fader.svelte`: Fader mit Skala, Meter, Maus/Touch/Rad/Tastatur.
+- `Fader.svelte`: Fader mit Skala, Meter (mit Spitzenwert), Maus/Touch/Rad/Tastatur. Doppeltippen = 0 dB, langsames Ziehen = Feinmodus (bis ¼ Weg), ⌥ = fein.
 - `ChannelSheet.svelte`: Kanal-Fenster mit Tabs EQ, Dynamics und Kanal (Name, Farbe, Gain).
+  - Auf iPad/Computer (≥ 1000 × 600) neben dem Mischpult angedockt (`docked`), der gewählte Kanalzug hat einen blauen Rahmen. Auf dem Handy erscheint es als Fenster von unten.
+  - Wischen auf dem Kanalnamen wechselt den Kanal.
+- `ChannelHead.svelte`: Kopf des Kanal-Bereichs mit Eingangs-/Ausgangspegel (Spitzenwert 1,5 s), waagrechtem Fader (Doppelklick = 0 dB), ON, CUE und Gain ±1 dB.
 - `EqEditor.svelte`: Canvas-Kurve mit ziehbaren Punkten und Reglern pro Band.
 - `DynamicsPanel.svelte`, `RackSheet.svelte`, `SettingsSheet.svelte`, `AutoSheet.svelte`.
 - `store.svelte.ts`: zentraler Store (WebSocket, Werte-Map, Schreiben mit Touch-Schutz).
@@ -190,7 +196,9 @@ Alles ist in `web/src/app.css` definiert. Es basiert auf Apples Human Interface 
 **Breakpoints**
 - ≤ 430 px: Handy.
 - ≥ 720 × 560: Sheets erscheinen als zentrierte Karte statt als Bottom-Sheet.
+- ≥ 1000 × 600: Kanal-Bereich wird neben dem Mischpult angedockt.
 - ≥ 1100 px: breite Kanalzüge.
+- ≤ 430 px: Werkzeug-Knöpfe in der Toolbar zeigen nur Symbole.
 - Der Ebenen-Umschalter in der Toolbar steht je nach Breite inline oder in einer eigenen Zeile.
 
 **Globale Klassen**

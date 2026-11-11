@@ -187,3 +187,32 @@ export function extraWritable(): Record<number, number[]> {
   const rack = Array.from({ length: RACK_PARAM_COUNT - 4 }, (_, i) => i + 4); // not the name fields
   return { 61: dyna, 64: dyna, 88: dyna, 105: dyna, 119: dyna, [QL_RACK_ELEMENT]: rack };
 }
+
+// ------------------------------------------------ custom fader bank (layout not decoded yet)
+
+/**
+ * Editor-protocol elements of the custom fader bank. Numbers come from the element-name table in
+ * QL Editor (the n-th name = element n; verified against EQ 67, HPF 66, dynamics 61/64/88/105/119,
+ * RackMount 132, PremiumEffect 705). Which block a QL5/QL1 uses and how the values are laid out is
+ * read from the real console with the diagnosis "Fader-Ebenen vom Pult lesen".
+ */
+export const CUSTOM_FADER_ELEMENTS: { elem: number; name: string }[] = [
+  { elem: 359, name: "SetupCustomBlockLeftCL5" },
+  { elem: 360, name: "SetupCustomBlockRightCL5" },
+  { elem: 361, name: "SetupCustomBlockCentralogicInCL5" },
+  { elem: 362, name: "SetupCustomBlockCentralogicOutCL5" },
+  { elem: 363, name: "SetupCustomBlockMasterCL5" },
+  { elem: 364, name: "SetupCustomBlockLeftCL3" },
+  { elem: 368, name: "SetupCustomBlockLeftCL1" },
+  { elem: 517, name: "BackupCustomFaderAdmin" },
+  { elem: 518, name: "BackupCustomFaderGuest" },
+  { elem: 519, name: "BackupCustomBlockLeft" },
+  { elem: 520, name: "BackupCustomBlockRight" },
+  { elem: 521, name: "BackupCustomBlockCentralogicIn" },
+  { elem: 522, name: "BackupCustomBlockCentralogicOut" },
+  { elem: 523, name: "BackupCustomBlockMaster" },
+  { elem: 524, name: "BackupCustomBlockLeftAdmin" },
+  { elem: 525, name: "BackupCustomBlockRightAdmin" },
+  { elem: 529, name: "BackupCustomBlockLeftGuest" },
+  { elem: 530, name: "BackupCustomBlockRightGuest" },
+];
