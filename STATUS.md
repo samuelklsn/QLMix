@@ -1,6 +1,6 @@
 # STATUS – QLMix
 
-Stand: 2026-11-11 · Version **1.3.0** gebaut, noch nicht veröffentlicht (letztes Release `v1.2.0`)
+Stand: 2026-11-12 · Version **1.4.0** gebaut, noch nicht veröffentlicht (letztes Release `v1.3.0`)
 
 ## Fertig
 
@@ -32,7 +32,7 @@ Stand: 2026-11-11 · Version **1.3.0** gebaut, noch nicht veröffentlicht (letzt
 - Lesbarkeit und Kontrast verbessert, Fader per Tastatur bedienbar, ARIA.
 - README mit neuen Screenshots (`docs/img/web/`).
 
-**1.3.0 (gebaut, noch nicht veröffentlicht)**
+**1.3.0**
 - Kanal-Bereich neben dem Mischpult auf iPad/Computer, das Mischpult bleibt sichtbar und live.
 - Kanal-Kopf mit Live-Pegel, Fader, ON, CUE und Gain direkt über EQ/Dynamics.
 - Eingangspegel für alle Kanalzüge (vorher am echten QL keine Eingangs-Meter, weil RCP sie nicht liefert).
@@ -40,12 +40,22 @@ Stand: 2026-11-11 · Version **1.3.0** gebaut, noch nicht veröffentlicht (letzt
 - Diagnose „Fader-Ebenen vom Pult lesen“ (Custom Fader Bank) in den Einstellungen.
 - README-Screenshots erneuert.
 
+**1.4.0 (gebaut, noch nicht veröffentlicht): Raum-Automatik öffnet Mikros selbst**
+- Eine Ziel-Lautstärke für alle Sprecher-Mikros.
+- Spricht jemand deutlich (≥ 12 dB über dem eigenen Grundrauschen, 6 dB lauter als alle anderen, 0,5 s), wird der Kanal eingeschaltet und der Fader auf die gemerkte Stellung (sonst −10 dB) gezogen.
+- Gemerkte Faderstellung pro Mikro (`autolevel.learned` in `config.json`), aus „passt“-Momenten und Handgriffen.
+- Mikros, die die Automatik geöffnet hat, werden nach Stille (Standard 30 s) wieder in den alten Zustand gebracht.
+- Feste Grenzen statt relativ zur Startstellung: Fader nie unter −20 dB / nie über +5 dB.
+- Behoben: Rundung des Pults galt als Handgriff (20 s Pause); Grundrauschen der Mikros wanderte bei langen Reden mit.
+- Von Hand ausgeschaltet während jemand spricht → bleibt aus, bis 10 s Ruhe.
+- Im Simulator end-to-end geprüft (aus → ein, −∞ → −10 dB → Feinregeln, Stummschalten von Hand).
+
 **Sonstiges**
 - 15 Web-Tests grün, `svelte-check` 0 Fehler.
 
 ## In Arbeit
 
-- 1.3.0: Commit, Push und Release warten auf Samuels OK.
+- 1.4.0: Commit, Push und Release warten auf Samuels OK.
 - Die Raum-Automatik ist in der **Testphase** (Badge „Test“ im UI). Der Nutzer testet sie im echten Raum.
 
 ## Nächste Schritte
@@ -55,7 +65,9 @@ Stand: 2026-11-11 · Version **1.3.0** gebaut, noch nicht veröffentlicht (letzt
 - **Samuel fragen, welche Funktionen ihm am meisten fehlen.** Vorschläge waren Mute-Gruppen, Pan, Sends eines Kanals auf alle Mixe, Szenen speichern. Er hat noch nicht geantwortet.
 
 - 1.2.0 auf dem Windows-PC einspielen (`update.cmd`) und am echten Pult und iPhone prüfen. Die Rückmeldung des Nutzers steht noch aus.
-- **Raum-Automatik im echten Raum testen.**
+- **Raum-Automatik (1.4) im echten Raum testen.**
+  - Prüfen, ob ausgeschaltete Mikros zuverlässig geöffnet werden und nicht durch Übersprechen.
+  - Schwellen ggf. anpassen (`OPEN_EXCESS`, `DOMINANCE`, `CONFIRM_MS` in `autolevel.ts`).
   - Prüfen, ob die Kanzel jetzt erkannt wird.
   - Ziel-Lautstärke, Tempo und Grenzen praxisnah einstellen.
 - **Dynamics abgleichen:**

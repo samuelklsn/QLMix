@@ -32,10 +32,28 @@ export interface AutoConfigState {
   channels: ChannelId[];
   reference: number | null;
   offset: number;
-  maxBoost: number;
-  maxCut: number;
   speed: number;
   ceiling: number;
+  minLevel: number;
+  startLevel: number;
+  closeAfter: number;
+  learned: Record<string, number>;
+}
+
+export interface AutoMic {
+  key: string;
+  label: string;
+  level: number | null;
+  floor: number | null;
+  excess: number | null;
+  speaking: boolean;
+  on: boolean;
+  open: boolean;
+  fader: number | null;
+  opened: boolean;
+  blocked: boolean;
+  learned: number | null;
+  closesIn: number | null;
 }
 
 export interface AutoState {
@@ -45,13 +63,13 @@ export interface AutoState {
     enabled: boolean;
     message: string;
     level: "ok" | "info" | "warn";
+    event: string | null;
     active: string | null;
     activeKey: string | null;
     room: { level: number | null; speech: number | null; floor: number | null; target: number | null; fresh: boolean };
     metersAvailable: boolean;
-    corrections: Record<string, number>;
     feedback: boolean;
-    mics: { key: string; label: string; level: number | null; floor: number | null; excess: number | null; speaking: boolean; on: boolean; faderOpen: boolean }[];
+    mics: AutoMic[];
   };
 }
 
@@ -256,7 +274,7 @@ class Store {
     for (const p of params) this.write(eqWriteKeys(c, p, s), eqRaw(snapped, p, s), immediate);
   }
 
-  autoAction(action: "start" | "stop" | "reference" | "config", config?: Partial<AutoConfigState>): void {
+  autoAction(action: "start" | "stop" | "reference" | "config" | "forget", config?: Partial<AutoConfigState>): void {
     this.autoError = null;
     this.autoErrorAction = null;
     this.autoOk = null;

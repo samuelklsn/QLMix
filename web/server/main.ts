@@ -188,10 +188,15 @@ const auto = new AutoLevel({
   fader: (c) => { const v = link.values.get(channelParamKey(c, "level")); return typeof v === "number" ? v : undefined; },
   isOn: (c) => link.values.get(channelParamKey(c, "on")) === 1,
   setFader: (c, raw) => { for (const k of channelWriteKeys(c, "level")) { link.set(k, raw); queueParam(k, raw); } },
+  setOn: (c, on) => { for (const k of channelWriteKeys(c, "on")) { link.set(k, on ? 1 : 0); queueParam(k, on ? 1 : 0); } },
   label: (c) => { const n = link.values.get(channelParamKey(c, "name")); return typeof n === "string" && n ? n : channelLabel(c); },
 }, config.autolevel);
 let roomClient: Client | null = null;
 auto.onActiveChange = (label) => { if (auto.enabled) console.log(`[Auto] aktives Mikro: ${label ?? "keins"}`); };
+auto.onEvent = (text) => console.log(`[Auto] ${text}`);
+// Learned fader positions are saved a few seconds after they change (not on every tick).
+let learnSave: ReturnType<typeof setTimeout> | undefined;
+auto.onConfigChange = () => { clearTimeout(learnSave); learnSave = setTimeout(saveAuto, 5000); };
 ql.on("inmeters", (levels: Map<string, number>) => {
   auto.setMeters(levels);
   // RCP only meters MIX/MTX on CL/QL – input strips get the editor-protocol input meters (pre-EQ).
@@ -224,6 +229,7 @@ function handleAuto(client: Client, m: any) {
     case "start": error = auto.start(); if (!error) console.log("[Auto] Raum-Automatik gestartet"); break;
     case "stop": auto.stop(); console.log("[Auto] Raum-Automatik gestoppt"); break;
     case "reference": error = auto.takeReference(); saveAuto(); break;
+    case "forget": auto.config.learned = {}; saveAuto(); break;
     case "config": {
       const c = m.config ?? {};
       const num = (v: unknown, lo: number, hi: number, d: number) => (typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
@@ -233,10 +239,11 @@ function handleAuto(client: Client, m: any) {
           .map((x: any) => ({ kind: x.kind, index: x.index }));
       }
       auto.config.offset = num(c.offset, -15, 15, auto.config.offset);
-      auto.config.maxBoost = num(c.maxBoost, 0, 15, auto.config.maxBoost);
-      auto.config.maxCut = num(c.maxCut, 0, 30, auto.config.maxCut);
       auto.config.speed = num(c.speed, 0.2, 4, auto.config.speed);
       auto.config.ceiling = num(c.ceiling, -10, 10, auto.config.ceiling);
+      auto.config.minLevel = num(c.minLevel, -60, auto.config.ceiling, auto.config.minLevel);
+      auto.config.startLevel = num(c.startLevel, -40, 10, auto.config.startLevel);
+      auto.config.closeAfter = num(c.closeAfter, 5, 600, auto.config.closeAfter);
       saveAuto();
       break;
     }

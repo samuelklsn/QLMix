@@ -1,14 +1,18 @@
-// Raum-Automatik: keeps the speech level at the listening position constant.
+// Raum-Automatik: one target speech level in the room for every speaker microphone.
 //
 // Inputs:  room level measured by a phone in the room (dBFS, speech band, ~5 values/s),
-//          optional feedback flag from the phone, console input meters (who is talking).
-// Output:  small, rate-limited fader moves on the active speech microphone.
+//          optional feedback flag from the phone, console input meters (pre-EQ, i.e. before
+//          ON and fader – so a switched-off mic still shows who is talking).
+// Output:  - a mic that somebody clearly talks into is switched ON and its fader jumps to the
+//            position that last gave the target level ("learned", per mic) or the start level,
+//          - small, rate-limited fader moves on the active mic until the room hits the target,
+//          - a mic the automatic opened is restored (fader/ON as before) after a silence.
 //
-// Safety: only selected channels, bounded around the fader position at start (maxBoost/maxCut,
-// absolute ceiling), manual fader moves pause the channel, feedback → immediate cut,
-// missing measurement → hold.
+// Safety: only selected channels, fader range [minLevel, ceiling], opening needs clear and
+// dominant speech for a moment, manual fader/ON changes win (pause, or "stay closed"),
+// feedback → immediate cut and no raising/opening, missing measurement → no fine regulation.
 
-import type { ChannelId } from "../shared/rcp.ts";
+import { type ChannelId, levelToPosition } from "../shared/rcp.ts";
 
 export interface AutoConfig {
   channels: ChannelId[];
@@ -16,14 +20,17 @@ export interface AutoConfig {
   reference: number | null;
   /** User offset in dB (louder / quieter than the reference). */
   offset: number;
-  maxBoost: number;   // dB above the starting fader position
-  maxCut: number;     // dB below the starting fader position
-  speed: number;      // dB per second
-  ceiling: number;    // absolute fader ceiling in dB
+  speed: number;       // dB per second
+  ceiling: number;     // fader never above (dB)
+  minLevel: number;    // fader never below while regulating (dB); below counts as "closed"
+  startLevel: number;  // opening position (dB) for a mic without a learned position
+  closeAfter: number;  // seconds without speech before a mic opened by the automatic is closed again
+  /** channel key → fader position (0.01 dB) that gave the target level last time */
+  learned: Record<string, number>;
 }
 
 export const DEFAULT_AUTO_CONFIG: AutoConfig = {
-  channels: [], reference: null, offset: 0, maxBoost: 6, maxCut: 10, speed: 1, ceiling: 5,
+  channels: [], reference: null, offset: 0, speed: 1, ceiling: 5, minLevel: -20, startLevel: -10, closeAfter: 30, learned: {},
 };
 
 export interface AutoIO {
@@ -32,6 +39,7 @@ export interface AutoIO {
   fader(c: ChannelId): number | undefined;
   isOn(c: ChannelId): boolean;
   setFader(c: ChannelId, raw: number): void;
+  setOn(c: ChannelId, on: boolean): void;
   label(c: ChannelId): string;
 }
 
@@ -39,11 +47,12 @@ export interface AutoStatus {
   enabled: boolean;
   message: string;
   level: "ok" | "info" | "warn";
+  /** last opening/closing action, shown for a few seconds */
+  event: string | null;
   active: string | null;
   activeKey: string | null;
   room: { level: number | null; speech: number | null; floor: number | null; target: number | null; fresh: boolean };
   metersAvailable: boolean;
-  corrections: Record<string, number>; // channel key → dB relative to start
   feedback: boolean;
   /** Per selected channel: what the detection sees (for the live display). */
   mics: MicInfo[];
@@ -52,15 +61,26 @@ export interface AutoStatus {
 export interface MicInfo {
   key: string;
   label: string;
-  /** current console meter (raw 0…126), null without meters */
+  /** current console meter (raw 0…126 = dB + 126), null without meters */
   level: number | null;
   /** noise floor of this mic (raw) */
   floor: number | null;
-  /** level above the mic's own noise floor */
+  /** level above the mic's own noise floor (dB) */
   excess: number | null;
   speaking: boolean;
   on: boolean;
-  faderOpen: boolean;
+  /** ON and fader at or above the minimum */
+  open: boolean;
+  /** fader in dB, null = −∞/unknown */
+  fader: number | null;
+  /** opened by the automatic – will be closed again after the silence */
+  opened: boolean;
+  /** switched off by hand while talking – stays closed until it was quiet for a while */
+  blocked: boolean;
+  /** learned fader position in dB */
+  learned: number | null;
+  /** seconds until an opened mic is closed again */
+  closesIn: number | null;
 }
 
 const ck = (c: ChannelId) => `${c.kind}:${c.index}`;
@@ -69,15 +89,43 @@ const DEADBAND = 1.5;
 const ROOM_STALE_MS = 2000;
 const SPEECH_WINDOW_MS = 2500;
 const FLOOR_WINDOW_MS = 20000;
+/** Mic noise floor: lowest 5 % of a minute – survives long speeches with only short pauses. */
+const MIC_FLOOR_WINDOW_MS = 60000;
+const MIC_FLOOR_PERCENTILE = 0.05;
+const METER_STALE_MS = 1500;
 const FEEDBACK_CUT_DB = 3;
 const FEEDBACK_PAUSE_MS = 10000;
 const MANUAL_PAUSE_MS = 20000;
 const WRITE_INTERVAL_MS = 200;
-/** A mic counts as "speaking" when it is this many meter steps above its own noise floor. */
+const EVENT_MS = 6000;
+/** Short peak hold on the console meter so the gaps between words don't count as silence. */
+const HOLD_MS = 400;
+/** A mic counts as "speaking" when it is this many dB above its own noise floor. */
 export const SPEAK_EXCESS = 8;
+/** Opening a closed mic needs clearer speech … */
+export const OPEN_EXCESS = 12;
+/** … this much above every other selected mic (so a mic that only overhears stays closed) … */
+export const DOMINANCE = 6;
+/** … for at least this long. */
+export const CONFIRM_MS = 500;
+/** A mic switched off by hand may be reopened after this long without speech into it. */
+export const UNBLOCK_MS = 10000;
 
 interface RoomSample { t: number; level: number; feedback: boolean }
-interface ChannelState { baseline: number; lastWritten: number | null; pausedUntil: number; lastWriteAt: number; noRaiseUntil: number }
+interface ChannelState {
+  /** fader/ON as last seen or written by us – anything else is a manual change */
+  seenFader: number | null;
+  seenOn: boolean | null;
+  lastWriteAt: number;
+  pausedUntil: number;
+  noRaiseUntil: number;
+  /** state before the automatic opened this mic */
+  opened: { on: boolean; fader: number } | null;
+  blockedAt: number | null;
+  speakingSince: number | null;
+  /** last time this mic was the loudest speaking mic */
+  lastActiveAt: number;
+}
 
 function percentile(values: number[], p: number): number {
   const s = [...values].sort((a, b) => a - b);
@@ -87,6 +135,13 @@ function percentile(values: number[], p: number): number {
 function powerMean(dbs: number[]): number {
   return 10 * Math.log10(dbs.reduce((a, d) => a + Math.pow(10, d / 10), 0) / dbs.length);
 }
+
+/** Fader values differ by more than console rounding (0.5 dB and ~1 % of the travel). */
+function faderDiffers(a: number, b: number): boolean {
+  return Math.abs(a - b) > 50 && Math.abs(levelToPosition(a) - levelToPosition(b)) > 0.012;
+}
+
+const dbText = (raw: number) => (raw <= NEG_INF ? "−∞" : `${raw > 0 ? "+" : raw < 0 ? "−" : ""}${Math.abs(Math.round(raw / 10) / 10)} dB`);
 
 export class AutoLevel {
   config: AutoConfig;
@@ -99,14 +154,23 @@ export class AutoLevel {
   private status: AutoStatus;
   private lastTick = 0;
   private lastActiveKey: string | null = null;
+  private bestKey: string | null = null;
+  private noOpenUntil = 0;
+  private event: { text: string; until: number } | null = null;
   /** Optional hook (server log) when the detected speaker changes. */
   onActiveChange?: (label: string | null) => void;
+  /** Optional hook when the automatic opens or closes a mic (server log). */
+  onEvent?: (text: string) => void;
+  /** Called when the config changed by itself (learned positions) and should be saved. */
+  onConfigChange?: () => void;
 
   private io: AutoIO;
 
   constructor(io: AutoIO, config: Partial<AutoConfig> = {}) {
     this.io = io;
-    this.config = { ...DEFAULT_AUTO_CONFIG, ...config };
+    const { channels, reference, offset, speed, ceiling, minLevel, startLevel, closeAfter, learned } = { ...DEFAULT_AUTO_CONFIG, ...config };
+    // Only known fields – drops settings of older versions (maxBoost/maxCut).
+    this.config = { channels, reference, offset, speed, ceiling, minLevel, startLevel, closeAfter, learned: { ...learned } };
     this.status = this.emptyStatus("Aus");
   }
 
@@ -129,7 +193,7 @@ export class AutoLevel {
       if (v === undefined) continue;
       const h = this.meterHistory.get(ck(c)) ?? [];
       h.push({ t, v });
-      while (h.length && h[0].t < t - FLOOR_WINDOW_MS) h.shift();
+      while (h.length && h[0].t < t - MIC_FLOOR_WINDOW_MS) h.shift();
       this.meterHistory.set(ck(c), h);
     }
   }
@@ -140,13 +204,14 @@ export class AutoLevel {
     if (this.config.channels.length === 0) return "Bitte zuerst Sprecher-Mikrofone auswählen.";
     if (this.config.reference === null) return "Bitte zuerst „So soll es klingen“ festlegen.";
     this.enabled = true;
-    this.channels.clear(); // baselines are taken from the current fader positions
+    this.channels.clear();
+    this.bestKey = null;
     return null;
   }
 
   stop(): void {
     this.enabled = false;
-    this.status = { ...this.status, enabled: false, message: "Aus", level: "info" };
+    this.status = { ...this.status, enabled: false, message: "Aus", level: "info", event: null };
   }
 
   /** Uses the current speech level as the target ("So soll es klingen"). */
@@ -172,18 +237,17 @@ export class AutoLevel {
     const floor = this.room.length >= 10 ? percentile(this.room.map((s) => s.level), 0.1) : null;
     const speech = this.speechLevel();
     const target = this.config.reference === null ? null : this.config.reference + this.config.offset;
-    const metersAvailable = !!this.meters && now - this.meters.t < 1500;
+    const metersAvailable = !!this.meters && now - this.meters.t < METER_STALE_MS;
     const feedback = this.room.some((s) => s.feedback && now - s.t < 600);
-    const base = {
-      enabled: this.enabled,
-      room: { level: fresh ? this.room[this.room.length - 1].level : null, speech, floor, target, fresh },
-      metersAvailable,
-      corrections: this.corrections(),
-      feedback,
-    };
-    const mics = this.micInfo(metersAvailable);
+    const roomStatus = { level: fresh ? this.room[this.room.length - 1].level : null, speech, floor, target, fresh };
+
     const set = (message: string, level: AutoStatus["level"], active: ChannelId | null = null) => {
-      this.status = { ...base, mics, message, level, active: active ? this.io.label(active) : null, activeKey: active ? ck(active) : null, corrections: this.corrections() };
+      if (this.event && this.event.until < now) this.event = null;
+      this.status = {
+        enabled: this.enabled, room: roomStatus, metersAvailable, feedback, mics: this.micInfo(metersAvailable),
+        message, level, event: this.event?.text ?? null,
+        active: active ? this.io.label(active) : null, activeKey: active ? ck(active) : null,
+      };
       if (this.status.activeKey !== this.lastActiveKey) {
         this.lastActiveKey = this.status.activeKey;
         this.onActiveChange?.(this.status.active);
@@ -191,64 +255,70 @@ export class AutoLevel {
     };
 
     if (!this.enabled) return set("Aus", "info");
-    if (!fresh) return set("Keine Messung vom Handy – Fader bleiben stehen.", "warn");
 
-    // Detect manual moves on all controlled channels.
-    for (const c of this.config.channels) {
-      const st = this.channels.get(ck(c));
-      const f = this.io.fader(c);
-      if (!st || f === undefined || st.lastWritten === null) continue;
-      if (Math.abs(f - st.lastWritten) > 30) {
-        st.baseline = f;
-        st.lastWritten = null;
-        st.pausedUntil = now + MANUAL_PAUSE_MS;
-      }
-    }
+    this.detectManualChanges(now);
+    const best = this.detectSpeaker(now, metersAvailable);
+    if (metersAvailable) this.closeSilentMics(now);
 
-    const active = this.activeChannel(metersAvailable, mics);
-    // A mic is speaking but its fader is closed / channel off: say so instead of silently ignoring it.
-    if (active && (!this.io.isOn(active) || (this.io.fader(active) ?? NEG_INF) <= -6000)) {
-      const why = !this.io.isOn(active) ? "Kanal ist aus (ON)" : "Fader ist ganz unten";
-      return set(`${this.io.label(active)} spricht, aber ${why} – Automatik kann diesen Kanal nicht regeln.`, "warn", active);
-    }
+    // Feedback first: cut, and neither raise nor open anything for a while.
     if (feedback) {
-      const victims = active ? [active] : this.config.channels.filter((c) => this.io.isOn(c));
+      const victims = best && this.isOpen(best) ? [best] : this.config.channels.filter((c) => this.isOpen(c));
       for (const c of victims) {
         const st = this.state(c);
-        if (!st) continue;
         this.move(c, st, -FEEDBACK_CUT_DB * 100, true);
         st.noRaiseUntil = now + FEEDBACK_PAUSE_MS;
       }
-      return set("Rückkopplung erkannt – Pegel reduziert.", "warn", active);
+      this.noOpenUntil = now + FEEDBACK_PAUSE_MS;
+      return set("Rückkopplung erkannt – Pegel reduziert.", "warn", best);
     }
-    if (!active) {
-      const open = this.config.channels.filter((c) => this.io.isOn(c) && (this.io.fader(c) ?? NEG_INF) > -6000);
-      if (open.length === 0) return set("Kein Sprecher-Mikrofon offen.", "info");
-      return set(metersAvailable ? "Kein Mikrofon spricht gerade." : "Mehrere Mikrofone offen – ohne Pult-Pegel nicht eindeutig.", "info");
+
+    if (best && !this.isOpen(best)) {
+      const why = this.tryOpen(best, now);
+      if (why) return set(why, "info", best);
     }
-    const st = this.state(active)!;
-    if (st.pausedUntil > now) return set(`${this.io.label(active)}: von Hand verstellt – Automatik pausiert kurz.`, "info", active);
-    if (speech === null || target === null) return set(`${this.io.label(active)}: warte auf Sprache …`, "info", active);
+
+    if (!best) {
+      if (!metersAvailable) {
+        const open = this.config.channels.filter((c) => this.isOpen(c));
+        return set(open.length > 1 ? "Mehrere Mikrofone offen – ohne Pult-Pegel nicht eindeutig." : "Kein Sprecher-Mikrofon offen – ohne Pult-Pegel kann die Automatik keines öffnen.", "info");
+      }
+      return set(fresh ? "Kein Mikrofon spricht gerade." : "Bereit – Mikros werden geöffnet, sobald jemand spricht. Für das Feinregeln fehlt die Messung vom Handy.", "info");
+    }
+
+    const st = this.state(best);
+    const name = this.io.label(best);
+    if (!fresh) return set(`${name} spricht – keine Messung vom Handy, Fader bleibt stehen.`, "warn", best);
+    if (st.pausedUntil > now) return set(`${name}: von Hand verstellt – Automatik pausiert kurz.`, "info", best);
+    if (speech === null || target === null) return set(`${name}: warte auf Sprache …`, "info", best);
 
     const error = target - speech;
-    if (Math.abs(error) < DEADBAND) return set(`${this.io.label(active)}: Lautstärke passt.`, "ok", active);
-    if (error > 0 && st.noRaiseUntil > now) return set(`${this.io.label(active)}: nach Rückkopplung kein Anheben.`, "warn", active);
-    if (now - st.lastWriteAt < WRITE_INTERVAL_MS) return set(this.status.message, this.status.level, active);
+    const f = this.io.fader(best);
+    if (Math.abs(error) < DEADBAND) {
+      if (f !== undefined) this.learn(best, f);
+      return set(`${name}: Lautstärke passt.`, "ok", best);
+    }
+    if (error > 0 && st.noRaiseUntil > now) return set(`${name}: nach Rückkopplung kein Anheben.`, "warn", best);
+    if (now - st.lastWriteAt < WRITE_INTERVAL_MS) return set(this.status.message, this.status.level, best);
 
     const stepDb = Math.sign(error) * Math.min(Math.abs(error) * 0.5, this.config.speed * Math.max(dt, (now - st.lastWriteAt) / 1000));
-    const limited = this.move(active, st, Math.round(stepDb * 100), false);
-    if (limited) return set(`${this.io.label(active)}: Grenze erreicht (${error > 0 ? "max. Anhebung" : "max. Absenkung"}).`, "warn", active);
-    return set(`${this.io.label(active)}: ${error > 0 ? "zu leise – ziehe hoch" : "zu laut – nehme zurück"} (${error > 0 ? "+" : ""}${error.toFixed(1)} dB)`, "ok", active);
+    const limited = this.move(best, st, Math.round(stepDb * 100), false);
+    if (limited) return set(`${name}: Grenze erreicht (${error > 0 ? `Fader nie über ${dbText(this.config.ceiling * 100)}` : `Fader nie unter ${dbText(this.config.minLevel * 100)}`}).`, "warn", best);
+    return set(`${name}: ${error > 0 ? "zu leise – ziehe hoch" : "zu laut – nehme zurück"} (${error > 0 ? "+" : ""}${error.toFixed(1)} dB)`, "ok", best);
   }
 
   // ------------------------------------------------------------ internals
 
   private emptyStatus(message: string): AutoStatus {
     return {
-      enabled: false, message, level: "info", active: null, activeKey: null,
+      enabled: false, message, level: "info", event: null, active: null, activeKey: null,
       room: { level: null, speech: null, floor: null, target: null, fresh: false },
-      metersAvailable: false, corrections: {}, feedback: false, mics: [],
+      metersAvailable: false, feedback: false, mics: [],
     };
+  }
+
+  private note(text: string): void {
+    this.event = { text, until: this.io.now() + EVENT_MS };
+    this.onEvent?.(text);
   }
 
   /** Mean speech level over the last seconds, ignoring pauses (samples near the noise floor). */
@@ -261,76 +331,185 @@ export class AutoLevel {
     return powerMean(recent.map((s) => s.level));
   }
 
-  /**
-   * With console meters: the mic that is furthest above its *own* noise floor (so a sensitive
-   * pulpit mic with high gain is not outvoted by a mic that merely picks up the same voice).
-   * Closed/muted mics are still detected so the status can explain why nothing happens.
-   * Without meters: the only open selected mic.
-   */
-  private activeChannel(metersAvailable: boolean, mics: MicInfo[]): ChannelId | null {
-    if (!metersAvailable) {
-      const open = this.config.channels.filter((c) => this.io.isOn(c) && (this.io.fader(c) ?? NEG_INF) > -6000);
-      return open.length === 1 ? open[0] : null;
-    }
-    let best: MicInfo | null = null;
-    for (const m of mics) {
-      if (m.speaking && (best === null || (m.excess ?? 0) > (best.excess ?? 0))) best = m;
-    }
-    return best ? this.config.channels.find((c) => ck(c) === best!.key) ?? null : null;
-  }
-
-  private micInfo(metersAvailable: boolean): MicInfo[] {
-    return this.config.channels.map((c) => {
-      const key = ck(c);
-      const h = this.meterHistory.get(key);
-      const v = metersAvailable ? this.meters!.levels.get(key) : undefined;
-      const floor = h && h.length >= 5 ? percentile(h.map((x) => x.v), 0.1) : null;
-      const excess = v !== undefined && floor !== null ? v - floor : null;
-      return {
-        key, label: this.io.label(c), level: v ?? null, floor, excess,
-        speaking: excess !== null && excess >= SPEAK_EXCESS,
-        on: this.io.isOn(c), faderOpen: (this.io.fader(c) ?? NEG_INF) > -6000,
-      };
-    });
-  }
-
-  private state(c: ChannelId): ChannelState | null {
+  private state(c: ChannelId): ChannelState {
     let st = this.channels.get(ck(c));
     if (!st) {
-      const f = this.io.fader(c);
-      if (f === undefined || f <= NEG_INF) return null;
-      st = { baseline: f, lastWritten: null, pausedUntil: 0, lastWriteAt: 0, noRaiseUntil: 0 };
+      st = {
+        seenFader: null, seenOn: null, lastWriteAt: 0, pausedUntil: 0, noRaiseUntil: 0,
+        opened: null, blockedAt: null, speakingSince: null, lastActiveAt: 0,
+      };
       this.channels.set(ck(c), st);
     }
     return st;
   }
 
-  /** Moves a fader by `deltaRaw` (0.01 dB) within the limits. Returns true if a limit was hit. */
+  private isOpen(c: ChannelId): boolean {
+    return this.io.isOn(c) && (this.io.fader(c) ?? NEG_INF) >= this.config.minLevel * 100;
+  }
+
+  /** Fader or ON changed by someone else (console, another device): the person wins. */
+  private detectManualChanges(now: number): void {
+    for (const c of this.config.channels) {
+      const st = this.state(c);
+      const f = this.io.fader(c);
+      const on = this.io.isOn(c);
+      const talking = this.bestKey === ck(c);
+      if (f !== undefined && st.seenFader !== null && faderDiffers(f, st.seenFader)) {
+        st.pausedUntil = now + MANUAL_PAUSE_MS;
+        if (f < this.config.minLevel * 100 && f < st.seenFader) {
+          // Pulled down by hand: keep it closed while somebody is still talking into it.
+          if (talking || st.opened) this.block(c, st, now, "von Hand zugezogen");
+        } else if (talking && f >= this.config.minLevel * 100) {
+          this.learn(c, f); // the person's correction is the better position for next time
+        }
+      }
+      if (st.seenOn !== null && on !== st.seenOn && !on && (talking || st.opened)) this.block(c, st, now, "von Hand ausgeschaltet");
+      if (f !== undefined) st.seenFader = f;
+      st.seenOn = on;
+    }
+  }
+
+  private block(c: ChannelId, st: ChannelState, now: number, why: string): void {
+    st.blockedAt = now;
+    st.opened = null;
+    this.note(`${this.io.label(c)}: ${why} – bleibt zu, bis ${UNBLOCK_MS / 1000} s niemand hineinspricht.`);
+  }
+
+  /**
+   * The loudest speaking mic, measured against its *own* noise floor (so a sensitive pulpit mic
+   * with high gain is not outvoted by a mic that merely picks up the same voice). The current
+   * speaker keeps the role until another mic is clearly louder.
+   * Without meters: the only open selected mic.
+   */
+  private detectSpeaker(now: number, metersAvailable: boolean): ChannelId | null {
+    if (!metersAvailable) {
+      this.bestKey = null;
+      const open = this.config.channels.filter((c) => this.isOpen(c));
+      return open.length === 1 ? open[0] : null;
+    }
+    const levels = this.config.channels.map((c) => ({ c, ...this.meterLevel(c, now) }));
+    for (const m of levels) {
+      const st = this.state(m.c);
+      st.speakingSince = m.speaking ? (st.speakingSince ?? now) : null;
+    }
+    const speakers = levels.filter((m) => m.speaking).sort((a, b) => (b.excess ?? 0) - (a.excess ?? 0));
+    let best = speakers[0] ?? null;
+    const prev = speakers.find((m) => ck(m.c) === this.bestKey);
+    if (best && prev && prev !== best && (best.excess ?? 0) < (prev.excess ?? 0) + DOMINANCE) best = prev;
+    this.bestKey = best ? ck(best.c) : null;
+    if (best) this.state(best.c).lastActiveAt = now;
+    for (const m of levels) {
+      const st = this.state(m.c);
+      if (st.blockedAt !== null && now - Math.max(st.blockedAt, st.lastActiveAt) >= UNBLOCK_MS) st.blockedAt = null;
+    }
+    return best?.c ?? null;
+  }
+
+  /** Current (peak-held) meter level, floor and excess of one mic. */
+  private meterLevel(c: ChannelId, now: number): { level: number | null; floor: number | null; excess: number | null; speaking: boolean } {
+    const h = this.meterHistory.get(ck(c));
+    if (!h || !h.length || !this.meters || now - this.meters.t >= METER_STALE_MS) return { level: null, floor: null, excess: null, speaking: false };
+    const floor = h.length >= 5 ? percentile(h.map((x) => x.v), MIC_FLOOR_PERCENTILE) : null;
+    let level = h[h.length - 1].v;
+    for (let i = h.length - 1; i >= 0 && h[i].t > now - HOLD_MS; i--) level = Math.max(level, h[i].v);
+    const excess = floor === null ? null : level - floor;
+    return { level, floor, excess, speaking: excess !== null && excess >= SPEAK_EXCESS };
+  }
+
+  /** Opens `c` (ON + fader to the learned/start position) if the speech is clear. Returns why not. */
+  private tryOpen(c: ChannelId, now: number): string | null {
+    const st = this.state(c);
+    const name = this.io.label(c);
+    if (st.blockedAt !== null) return `${name} spricht, wurde aber von Hand geschlossen – bleibt zu.`;
+    if (st.pausedUntil > now) return `${name}: von Hand verstellt – Automatik pausiert kurz.`;
+    if (this.noOpenUntil > now) return `${name} spricht – nach Rückkopplung wird kurz nichts geöffnet.`;
+    const f = this.io.fader(c);
+    if (f === undefined) return `${name} spricht – Faderstellung noch unbekannt.`;
+    const me = this.meterLevel(c, now);
+    const others = this.config.channels.filter((x) => ck(x) !== ck(c)).map((x) => this.meterLevel(x, now).excess ?? 0);
+    const clear = (me.excess ?? 0) >= OPEN_EXCESS && others.every((e) => (me.excess ?? 0) >= e + DOMINANCE);
+    if (!clear) return `${name}: Sprache erkannt, aber nicht eindeutig – Mikro bleibt zu.`;
+    if (st.speakingSince === null || now - st.speakingSince < CONFIRM_MS) return `${name}: Sprache erkannt …`;
+
+    const on = this.io.isOn(c);
+    st.opened ??= { on, fader: f };
+    const min = this.config.minLevel * 100, max = this.config.ceiling * 100;
+    const learned = this.config.learned[ck(c)];
+    const level = Math.round(Math.min(max, Math.max(min, learned ?? this.config.startLevel * 100)) / 10) * 10;
+    const actions: string[] = [];
+    if (f < min) { this.io.setFader(c, level); actions.push(`Fader auf ${dbText(level)}${learned !== undefined ? " (gemerkt)" : ""}`); }
+    if (!on) { this.io.setOn(c, true); actions.push("eingeschaltet"); }
+    st.seenFader = this.io.fader(c) ?? null;
+    st.seenOn = this.io.isOn(c);
+    st.lastWriteAt = now;
+    st.lastActiveAt = now;
+    this.note(`${name} spricht – ${actions.join(", ")}.`);
+    return null;
+  }
+
+  /** Restores mics the automatic opened once nobody talked into them for `closeAfter` seconds. */
+  private closeSilentMics(now: number): void {
+    for (const c of this.config.channels) {
+      const st = this.state(c);
+      if (!st.opened || this.bestKey === ck(c) || now - st.lastActiveAt < this.config.closeAfter * 1000) continue;
+      const { on, fader } = st.opened;
+      st.opened = null;
+      const f = this.io.fader(c);
+      if (f !== undefined && f !== fader) this.io.setFader(c, fader);
+      if (this.io.isOn(c) !== on) this.io.setOn(c, on);
+      st.seenFader = this.io.fader(c) ?? null;
+      st.seenOn = this.io.isOn(c);
+      this.note(`${this.io.label(c)}: ${this.config.closeAfter} s still – wieder geschlossen.`);
+    }
+  }
+
+  /** Remembers the fader position that gives the target level for this mic. */
+  private learn(c: ChannelId, f: number): void {
+    if (f < this.config.minLevel * 100) return;
+    const v = Math.round(f / 10) * 10;
+    const old = this.config.learned[ck(c)];
+    if (old !== undefined && Math.abs(old - v) < 50) return;
+    this.config.learned[ck(c)] = v;
+    this.onConfigChange?.();
+  }
+
+  private micInfo(metersAvailable: boolean): MicInfo[] {
+    const now = this.io.now();
+    return this.config.channels.map((c) => {
+      const key = ck(c);
+      const st = this.channels.get(key);
+      const m = metersAvailable ? this.meterLevel(c, now) : { level: null, floor: null, excess: null, speaking: false };
+      const f = this.io.fader(c);
+      const learned = this.config.learned[key];
+      return {
+        key, label: this.io.label(c), ...m,
+        on: this.io.isOn(c), open: this.isOpen(c),
+        fader: f === undefined || f <= NEG_INF ? null : f / 100,
+        opened: !!st?.opened && this.enabled,
+        blocked: st?.blockedAt != null && this.enabled,
+        learned: learned === undefined ? null : learned / 100,
+        closesIn: st?.opened && this.enabled && this.bestKey !== key
+          ? Math.max(0, Math.ceil((st.lastActiveAt + this.config.closeAfter * 1000 - now) / 1000)) : null,
+      };
+    });
+  }
+
+  /** Moves a fader by `deltaRaw` (0.01 dB) within [minLevel, ceiling]. Returns true if a limit was hit. */
   private move(c: ChannelId, st: ChannelState, deltaRaw: number, force: boolean): boolean {
     const f = this.io.fader(c);
     if (f === undefined || f <= NEG_INF) return false;
-    const lo = st.baseline - this.config.maxCut * 100;
-    const hi = Math.min(st.baseline + this.config.maxBoost * 100, this.config.ceiling * 100);
+    const lo = this.config.minLevel * 100;
+    const hi = this.config.ceiling * 100;
     let next = Math.round((f + deltaRaw) / 10) * 10;
     let limited = false;
-    // Never push a fader back across a limit it already exceeds (e.g. set higher by hand before).
+    // Never push a fader back across a limit it already exceeds (e.g. set by hand).
     if (next > hi) { next = f > hi ? f : hi; limited = true; }
-    if (next < lo) { next = f < lo ? f : lo; limited = true; }
+    if (next < lo && !force) { next = f < lo ? f : lo; limited = true; }
     if (next === f && !force) return limited;
     this.io.setFader(c, next);
-    st.lastWritten = next;
+    st.seenFader = this.io.fader(c) ?? null;
     st.lastWriteAt = this.io.now();
     return limited;
-  }
-
-  private corrections(): Record<string, number> {
-    const out: Record<string, number> = {};
-    for (const c of this.config.channels) {
-      const st = this.channels.get(ck(c));
-      const f = this.io.fader(c);
-      if (st && f !== undefined && f > NEG_INF) out[ck(c)] = Math.round((f - st.baseline) / 10) / 10;
-    }
-    return out;
   }
 }
 

@@ -65,6 +65,8 @@
   const pct = (db: number | null | undefined) => (db === null || db === undefined ? 0 : Math.max(0, Math.min(100, ((db + 80) / 80) * 100)));
   const fmt = (db: number | null | undefined) => (db === null || db === undefined ? "–" : `${db.toFixed(1)} dB`);
   const speeds = [{ v: 0.5, l: "Langsam" }, { v: 1, l: "Normal" }, { v: 2, l: "Schnell" }];
+  const closeTimes = [15, 30, 60, 120];
+  const dbText = (db: number) => `${db > 0 ? "+" : db < 0 ? "−" : ""}${Math.abs(Math.round(db * 10) / 10)} dB`;
 
   /** What is still missing before the automatic can start – shown as a checklist. */
   const missing = $derived.by(() => {
@@ -91,6 +93,7 @@
             {st.active ? `Aktives Mikro: ${st.active}` : "Kein aktives Mikro"} ·
             {st.metersAvailable ? "erkannt über Pult-Pegel" : "Erkennung: einziges offenes Mikro"}
           </span>
+          {#if st.event}<span class="event t-footnote"><Icon name="check" size={13} /> {st.event}</span>{/if}
         </div>
       </div>
       {#if st.enabled}
@@ -122,15 +125,18 @@
                 {/if}
               </div>
               <span class="mstate">
-                {#if !m.on}<em class="warn">Aus</em>
-                {:else if !m.faderOpen}<em class="warn">Fader zu</em>
-                {:else if m.speaking}<em class="ok">Spricht</em>
+                {#if m.blocked}<em class="warn">Von Hand zu</em>
+                {:else if m.speaking && m.open}<em class="ok">Spricht</em>
+                {:else if m.speaking}<em class="warn">Spricht · zu</em>
+                {:else if m.opened && m.closesIn !== null}<em>{m.closesIn > cfg.closeAfter - 5 ? "Offen" : `Zu in ${m.closesIn} s`}</em>
+                {:else if !m.on}<em>Aus</em>
+                {:else if !m.open}<em>Fader zu</em>
                 {:else}<em>Ruhig</em>{/if}
               </span>
             </div>
           {/each}
         </div>
-        <p class="hint t-footnote">{st.metersAvailable ? "Pegel am Pult über dem eigenen Grundrauschen. Der Strich ist die Schwelle." : "Ohne Pult-Pegel zählt nur das einzige offene Mikro."}</p>
+        <p class="hint t-footnote">{st.metersAvailable ? "Pegel am Pult vor EQ und ON – so wird Sprache auch bei ausgeschaltetem Kanal erkannt. Der Strich ist die Schwelle." : "Ohne Pult-Pegel zählt nur das einzige offene Mikro, und es wird keins automatisch geöffnet."}</p>
       </section>
     {/if}
 
@@ -197,32 +203,41 @@
       <div class="chgrid">
         {#each inputs as c}
           {@const sel = selected(c)}
-          {@const corr = st.corrections[`${c.kind}:${c.index}`]}
+          {@const learned = cfg.learned[`${c.kind}:${c.index}`]}
           <button class="ch" class:sel class:active={st.activeKey === `${c.kind}:${c.index}`} aria-pressed={sel} onclick={() => toggleChannel(c)}>
             <span class="n">{channelLabel(c)}</span>
             <b>{name(c)}</b>
-            {#if sel && corr !== undefined}<span class="corr num">{corr > 0 ? "+" : ""}{corr.toFixed(1)} dB</span>{/if}
+            {#if sel && learned !== undefined}<span class="corr num">gemerkt {dbText(learned / 100)}</span>{/if}
           </button>
         {/each}
       </div>
-      <p class="hint t-footnote">Nur diese Kanäle darf die Automatik bewegen (z. B. Kanzel, Rednerpult, Funkmikros) – keine Instrumente oder Gesang.</p>
+      <p class="hint t-footnote">Nur diese Kanäle darf die Automatik einschalten und bewegen (z. B. Kanzel, Rednerpult, Funkmikros) – keine Instrumente oder Gesang.
+        Die Automatik merkt sich pro Mikro, bei welcher Faderstellung die Lautstärke gepasst hat.</p>
     </section>
 
-    <!-- 4 Limits -->
+    <!-- 4 Rules -->
     <section>
-      <h3 class="step"><span class="stepn">4</span>Grenzen</h3>
+      <h3 class="step"><span class="stepn">4</span>Regeln</h3>
       <div class="group">
         <div class="ctrl">
-          <div class="lbl"><span>Max. anheben</span><b class="num">+{cfg.maxBoost} dB</b></div>
-          <input type="range" min="0" max="12" step="1" value={cfg.maxBoost} aria-label="Maximal anheben" onchange={(e) => store.autoAction("config", { maxBoost: Number(e.currentTarget.value) })} />
+          <div class="lbl"><span>Erstes Öffnen auf</span><b class="num">{dbText(cfg.startLevel)}</b></div>
+          <input type="range" min="-30" max="5" step="1" value={cfg.startLevel} aria-label="Faderstellung beim ersten Öffnen" onchange={(e) => store.autoAction("config", { startLevel: Number(e.currentTarget.value) })} />
         </div>
         <div class="ctrl">
-          <div class="lbl"><span>Max. absenken</span><b class="num">−{cfg.maxCut} dB</b></div>
-          <input type="range" min="0" max="20" step="1" value={cfg.maxCut} aria-label="Maximal absenken" onchange={(e) => store.autoAction("config", { maxCut: Number(e.currentTarget.value) })} />
+          <div class="lbl"><span>Fader nie unter</span><b class="num">{dbText(cfg.minLevel)}</b></div>
+          <input type="range" min="-40" max="-5" step="1" value={cfg.minLevel} aria-label="Fader-Untergrenze" onchange={(e) => store.autoAction("config", { minLevel: Number(e.currentTarget.value) })} />
         </div>
         <div class="ctrl">
-          <div class="lbl"><span>Fader nie über</span><b class="num">{cfg.ceiling > 0 ? "+" : ""}{cfg.ceiling} dB</b></div>
+          <div class="lbl"><span>Fader nie über</span><b class="num">{dbText(cfg.ceiling)}</b></div>
           <input type="range" min="-10" max="10" step="1" value={cfg.ceiling} aria-label="Fader-Obergrenze" onchange={(e) => store.autoAction("config", { ceiling: Number(e.currentTarget.value) })} />
+        </div>
+        <div class="ctrl">
+          <div class="lbl"><span>Wieder schließen nach Stille</span></div>
+          <div class="segmented" role="radiogroup" aria-label="Wieder schließen nach">
+            {#each closeTimes as t}
+              <button role="radio" aria-checked={cfg.closeAfter === t} class:sel={cfg.closeAfter === t} onclick={() => store.autoAction("config", { closeAfter: t })}>{t < 60 ? `${t} s` : `${t / 60} min`}</button>
+            {/each}
+          </div>
         </div>
         <div class="ctrl">
           <div class="lbl"><span>Tempo</span></div>
@@ -232,11 +247,16 @@
             {/each}
           </div>
         </div>
+        {#if Object.keys(cfg.learned).length > 0}
+          <button class="pill" onclick={() => store.autoAction("forget")}>Gemerkte Faderstellungen vergessen</button>
+        {/if}
       </div>
     </section>
 
-    <p class="t-footnote">Die Automatik regelt nur, wenn ein ausgewähltes Mikro aktiv ist und gesprochen wird. Bei Musik bitte ausschalten.
-      Fader, die du selbst bewegst, lässt sie 20 Sekunden in Ruhe. Bei Rückkopplung wird sofort um 3 dB abgesenkt.</p>
+    <p class="t-footnote">Spricht jemand deutlich in ein ausgewähltes Mikro, schaltet die Automatik es ein und zieht den Fader auf die gemerkte Stellung.
+      Danach regelt sie nach der Messung in der Raummitte. Mikros, die sie selbst geöffnet hat, stellt sie nach der Stille wieder so wie vorher.
+      Fader, die du selbst bewegst, lässt sie 20 Sekunden in Ruhe. Schaltest du ein Mikro aus, während jemand hineinspricht, bleibt es aus.
+      Bei Rückkopplung wird sofort um 3 dB abgesenkt. Bei Musik bitte ausschalten.</p>
   {/if}
 </Sheet>
 
@@ -258,6 +278,7 @@
   }
   .todo-title { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; color: var(--warn); }
   .todo ul { margin: var(--s1) 0 0; padding-left: 20px; color: var(--label); }
+  .event { display: flex; align-items: center; gap: 4px; color: var(--on); margin-top: 2px; }
   .err { display: flex; align-items: center; gap: 6px; color: var(--danger-text); font-size: var(--fs-footnote); line-height: 18px; }
   .okmsg { display: flex; align-items: center; gap: 6px; color: var(--on); font-size: var(--fs-footnote); }
   .hint { padding: var(--s2) var(--s1) 0; }
@@ -307,7 +328,7 @@
   .ch .corr { font-size: var(--fs-caption); color: var(--label-2); }
 
   .mics { gap: var(--s2); }
-  .mic { display: grid; grid-template-columns: minmax(70px, 110px) 1fr 72px; align-items: center; gap: var(--s3); font-size: var(--fs-callout); min-height: 28px; }
+  .mic { display: grid; grid-template-columns: minmax(70px, 110px) 1fr 96px; align-items: center; gap: var(--s3); font-size: var(--fs-callout); min-height: 28px; }
   .mic.active .mname { color: var(--on); font-weight: 600; }
   .mname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .mbar { position: relative; height: 6px; border-radius: 3px; background: var(--sunken); overflow: hidden; }

@@ -7,13 +7,15 @@ des Pults; bedient wird **im Browser** auf jedem Handy, Tablet oder Computer.
 * Fader, ON, CUE für Eingänge, Stereo-Eingänge, Mix, Matrix, DCA und Summe
 * **Monitormixe** (Sends on Fader) – Musiker stellen ihren In-Ear-Mix selbst am Handy ein (`/?mix=3`)
 * **EQ und Hochpass** pro Kanal mit grafischer Kurve, Gain (Vorverstärker), Namen, Farben, Szenen, Meter
-* **Raum-Automatik** (neu in 1.1, Testphase): Das Handy misst in der Raummitte, QLMix erkennt das sprechende Mikro
-  und regelt es so, dass jeder Redner gleich laut im Raum ankommt
+* **Raum-Automatik** (Testphase): Das Handy misst in der Raummitte, QLMix erkennt das sprechende Mikro – seit 1.4
+  auch, wenn es aus ist –, schaltet es ein und regelt es so, dass jeder Redner gleich laut im Raum ankommt
 * **Dynamics** (Gate/Kompressor …) und **Premium Rack** (Portico, Dynamic EQ …) – *in Vorbereitung, Abgleich am Pult folgt*
 * läuft als App auf dem Home-Bildschirm (iPhone/iPad), optional mit PIN
 * **Neues Design in 1.2**: klarer, besser lesbar und auf Handy, Tablet und Computer gleich aufgeräumt
 * **Neu in 1.3**: Kanal-Bereich neben dem Mischpult (iPad/Computer) mit Live-Pegel, Fader, ON/CUE und Gain direkt beim EQ;
   Pegelanzeige für alle Eingangskanäle mit Spitzenwert; Doppeltippen auf einen Fader = 0 dB, langsames Ziehen = fein
+* **Neu in 1.4**: Raum-Automatik öffnet ausgeschaltete Mikros selbst, merkt sich pro Mikro die passende Faderstellung
+  und schließt Mikros nach einer Pause wieder
 
 <p align="center"><img src="docs/img/web/mixer-desktop.png" width="820" alt="QLMix im Browser: Kanalzüge und daneben der Kanal-Bereich mit Pegel, Fader und EQ"></p>
 
@@ -118,10 +120,19 @@ Weitere Details zur Web-Version (Bedienung, Musiker-Links, PIN, Mac/Linux): **[w
 
 ---
 
-## Raum-Automatik (Version 1.1, Testphase)
+## Raum-Automatik (Testphase)
 
-Ein Handy liegt in der Mitte des Raums und misst, wie laut die Sprache ankommt. QLMix erkennt am Pult, welches
-Sprecher-Mikrofon aktiv ist, und zieht dessen Fader langsam so, dass jeder Redner gleich laut im Raum ankommt.
+Ein Handy liegt in der Mitte des Raums und misst, wie laut die Sprache ankommt. Für alle Sprecher-Mikros gilt **eine**
+Ziel-Lautstärke. So arbeitet die Automatik (ab Version 1.4):
+
+1. **Wer spricht?** QLMix sieht am Pult-Pegel (vor EQ, ON und Fader), in welches Mikro gerade gesprochen wird –
+   auch wenn der Kanal aus ist oder der Fader ganz unten steht.
+2. **Mikro öffnen:** Spricht jemand eine halbe Sekunde lang deutlich hinein, schaltet QLMix den Kanal ein und zieht
+   den Fader auf die Stellung, bei der dieses Mikro zuletzt gepasst hat (beim allerersten Mal auf −10 dB).
+3. **Feinregeln:** Danach zieht QLMix den Fader nach der Messung des Handys, bis die Ziel-Lautstärke erreicht ist,
+   und merkt sich diese Stellung fürs nächste Mal.
+4. **Wieder schließen:** Ist in ein Mikro, das QLMix selbst geöffnet hat, 30 Sekunden lang niemand mehr hineingesprochen,
+   stellt QLMix es wieder so wie vorher (Fader zurück, Kanal aus). Mikros, die du selbst offen hattest, bleiben offen.
 
 ### Einmalig: Handy für die Messung freischalten (iPhone)
 
@@ -142,10 +153,18 @@ Browser erlauben das Mikrofon nur über eine sichere Verbindung (HTTPS). QLMix b
 4. Während jemand **normal spricht** und es gut klingt: **„So soll es klingen“**.
 5. **Automatik starten.** Mit dem Regler **leiser/lauter** die Ziel-Lautstärke jederzeit anpassen.
 
-**Sicherheit:** Die Automatik bewegt nur die ausgewählten Kanäle, höchstens so weit wie eingestellt
-(Standard: +6 dB / −10 dB vom Ausgangswert, Fader nie über +5 dB). Bei Rückkopplung wird sofort um 3 dB abgesenkt.
-Fader, die jemand von Hand bewegt, bleiben 20 Sekunden in Ruhe. Fällt die Messung aus, bleiben alle Fader stehen.
-Bei Musik die Automatik ausschalten. **Vor dem ersten Einsatz im Gottesdienst in Ruhe testen.**
+Unter **Regeln** lassen sich einstellen: Faderstellung beim ersten Öffnen, Fader nie unter / nie über
+(Standard −20 dB / +5 dB), wann wieder geschlossen wird (15 s – 2 min) und das Tempo.
+
+**Sicherheit:**
+* Die Automatik schaltet und bewegt nur die ausgewählten Kanäle.
+* Ein Mikro wird nur geöffnet, wenn es deutlich lauter ist als alle anderen. Ein Mikro, das den Redner nur von
+  weitem mithört, bleibt zu.
+* Fader, die jemand von Hand bewegt, bleiben 20 Sekunden in Ruhe; die neue Stellung wird gemerkt.
+* Schaltest du ein Mikro aus, während jemand hineinspricht, bleibt es aus, bis 10 Sekunden niemand mehr hineinspricht.
+* Bei Rückkopplung wird sofort um 3 dB abgesenkt, und kurz wird nichts angehoben oder geöffnet.
+* Fällt die Messung vom Handy aus, werden Mikros weiter geöffnet und geschlossen, aber nicht feingeregelt.
+* Bei Musik die Automatik ausschalten. **Vor dem ersten Einsatz im Gottesdienst in Ruhe testen.**
 
 ## Weitere Teile dieses Projekts
 

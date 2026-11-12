@@ -18,11 +18,12 @@
     - Ein Handy misst in der Raummitte über das Mikrofon.
     - Der Server erkennt das sprechende Mikro (Pult-Pegel über dem eigenen Grundrauschen).
     - Er regelt dessen Fader auf eine Ziel-Lautstärke.
+    - Seit 1.4: schaltet ausgeschaltete Mikros selbst ein, merkt sich pro Mikro die Faderstellung (`learned`) und stellt selbst geöffnete Mikros nach Stille wieder zurück.
 - **Produktivbetrieb:** auf einem Windows-PC des Nutzers, Autostart beim Booten.
 - **Mac-App** (Swift, `Sources/QLMix`): der erste Prototyp. Sie kann kein EQ über RCP, weil das Pult EQ nicht über RCP anbietet.
   - TODO: klären, ob die Mac-App noch weiterentwickelt werden soll. Seit der Web-Version wurde sie nicht mehr angefasst.
 - **Repo:** https://github.com/samuelklsn/QLMix (öffentlich, Branch `main`)
-  - Aktuelle Version **1.3.0**, Releases als GitHub-Release mit Tag `vX.Y.Z`.
+  - Aktuelle Version **1.4.0**, Releases als GitHub-Release mit Tag `vX.Y.Z`.
 
 ## Tech-Stack
 
