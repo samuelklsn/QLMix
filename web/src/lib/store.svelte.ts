@@ -39,6 +39,7 @@ export interface AutoConfigState {
   startLevel: number;
   closeAfter: number;
   learned: Record<string, number>;
+  limits: Record<string, number>;
 }
 
 export interface AutoMic {
@@ -51,9 +52,9 @@ export interface AutoMic {
   on: boolean;
   open: boolean;
   fader: number | null;
-  opened: boolean;
   blocked: boolean;
   learned: number | null;
+  limit: number | null;
   closesIn: number | null;
 }
 
@@ -84,6 +85,7 @@ class Store {
   meters = $state<Record<string, number[]>>({});
   log = $state<LogEntry[]>([]);
   auto = $state<AutoState | null>(null);
+  private autoHoldUntil = 0;
   autoError = $state<string | null>(null);
   /** Which action the last error belongs to (shown next to that button). */
   autoErrorAction = $state<string | null>(null);
@@ -168,7 +170,8 @@ class Store {
         break;
       case "auto": {
         const { t: _t, ...a } = m;
-        this.auto = a;
+        // Right after a local change the server may still send the old settings – keep ours briefly.
+        this.auto = this.auto && performance.now() < this.autoHoldUntil ? { ...a, config: this.auto.config } : a;
         break;
       }
       case "probe":
@@ -274,10 +277,21 @@ class Store {
     for (const p of params) this.write(eqWriteKeys(c, p, s), eqRaw(snapped, p, s), immediate);
   }
 
-  autoAction(action: "start" | "stop" | "reference" | "config" | "forget", config?: Partial<AutoConfigState>): void {
+  autoAction(action: "start" | "stop" | "reference" | "config" | "forget" | "forgetLimits", config?: Partial<AutoConfigState>): void {
     this.autoError = null;
     this.autoErrorAction = null;
     this.autoOk = null;
+    // Show the change at once instead of waiting for the server (taps felt unresponsive).
+    if (this.auto && (action === "config" || action === "forget" || action === "forgetLimits")) {
+      const same = (a: ChannelId) => (b: ChannelId) => a.kind === b.kind && a.index === b.index;
+      const c = { ...this.auto.config, ...(config ?? {}) };
+      if (config?.roomMics) c.channels = c.channels.filter((x) => !c.roomMics.some(same(x)));
+      if (config?.channels) c.roomMics = c.roomMics.filter((x) => !c.channels.some(same(x)));
+      if (action === "forget") c.learned = {};
+      if (action === "forgetLimits") c.limits = {};
+      this.auto = { ...this.auto, config: c };
+      this.autoHoldUntil = performance.now() + 800;
+    }
     this.sendRaw({ t: "auto", action, config });
   }
 

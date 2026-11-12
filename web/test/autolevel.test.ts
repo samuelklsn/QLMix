@@ -29,7 +29,8 @@ function church(start: { faders?: Record<string, number>; on?: Record<string, bo
   /** Who talks (mic key) and how loud the voice is (dB, 0 = normal speaker). */
   let talker: string | null = null;
   let voice = 0;
-  let feedback = false;
+  /** mic that feeds back: a steady tone on it and on the room mic */
+  let feedback: string | null = null;
   /** Runs `seconds` in 100 ms steps: meters (incl. room mic) every step, controller every 2nd. */
   const run = (seconds: number) => {
     for (let i = 0; i < seconds * 10; i++) {
@@ -38,10 +39,10 @@ function church(start: { faders?: Record<string, number>; on?: Record<string, bo
       const meters = new Map<string, number>();
       for (const k of ["input:0", "input:1"]) {
         const noise = (k === "input:0" ? 50 : 20) + (i % 3);   // Kanzel has much more gain
-        meters.set(k, talker === k && word ? noise + 30 + voice : talker && word ? noise + 4 : noise);
+        meters.set(k, feedback === k ? noise + 35 + (i % 2) : talker === k && word ? noise + 30 + voice : talker && word ? noise + 4 : noise);
       }
       const audible = talker !== null && word && on[talker] && faders[talker] > NEG_INF;
-      const roomDb = feedback ? -10 : audible ? voice + faders[talker!] / 100 - 30 + Math.sin(i) : -70 + Math.random();
+      const roomDb = feedback ? -10 + (i % 2) : audible ? voice + faders[talker!] / 100 - 30 + Math.sin(i) : -70 + Math.random();
       meters.set("input:2", Math.round(roomDb + 126));
       al.setMeters(meters);
       if (i % 2 === 1) al.tick();
@@ -50,7 +51,7 @@ function church(start: { faders?: Record<string, number>; on?: Record<string, bo
   return {
     al, faders, on, run,
     talk: (k: string | null, v = 0) => { talker = k; voice = v; },
-    setFeedback: (v: boolean) => { feedback = v; },
+    setFeedback: (k: string | null) => { feedback = k; },
     skip: (ms: number) => { now += ms; },
   };
 }
@@ -78,23 +79,27 @@ test("switches a closed mic on, pulls the fader up and regulates to the target",
   assert.ok(sim.al.config.learned["input:0"] !== undefined, "position remembered");
 });
 
-test("closes a mic it opened after the silence and restores the old state", () => {
-  const sim = church({ faders: { "input:1": -2000 } });
+test("pulls the fader down after the silence and opens again at once", () => {
+  const sim = church();
   sim.al.config.closeAfter = 30;
   sim.al.start();
   sim.run(25);
   sim.talk("input:1");
   sim.run(10);
   assert.equal(sim.on["input:1"], true);
+  const level = sim.faders["input:1"];
+  assert.ok(level > NEG_INF);
   sim.talk(null);
   sim.run(20);
-  assert.equal(sim.on["input:1"], true, "short pauses keep it open");
+  assert.equal(sim.faders["input:1"], level, "short pauses keep it up");
   const pult = sim.al.getStatus().mics.find((m) => m.label === "Pult")!;
-  assert.ok(pult.opened && pult.closesIn !== null && pult.closesIn <= 10, `closesIn ${pult.closesIn}`);
+  assert.ok(pult.closesIn !== null && pult.closesIn <= 10, `closesIn ${pult.closesIn}`);
   sim.run(12);
-  assert.equal(sim.on["input:1"], false, "switched off again");
-  assert.equal(sim.faders["input:1"], -2000, "fader back where it was");
-  assert.match(sim.al.getStatus().event ?? "", /Pult: 30 s still – wieder geschlossen/);
+  assert.equal(sim.faders["input:1"], NEG_INF, "fader down");
+  assert.match(sim.al.getStatus().event ?? "", /Pult: 30 s still – Fader runter/);
+  sim.talk("input:1");
+  sim.run(0.6);
+  assert.ok(sim.faders["input:1"] > NEG_INF, "back up within about half a second");
 });
 
 test("uses the learned position next time", () => {
@@ -118,17 +123,18 @@ test("does not open a mic that only overhears another speaker", () => {
   assert.equal(sim.al.getStatus().active, "Kanzel");
 });
 
-test("does not leave a mic open the automatic did not open", () => {
-  const sim = church({ faders: { "input:0": -500 }, on: { "input:0": true } });
+test("takes over mics opened by hand: down after the silence", () => {
+  const sim = church({ faders: { "input:0": -500, "input:1": 0 }, on: { "input:0": true, "input:1": true } });
   sim.al.config.closeAfter = 15;
   sim.al.start();
-  sim.run(25);
+  sim.run(10);
   sim.talk("input:0");
   sim.run(5);
   sim.talk(null);
-  sim.run(40);
-  assert.equal(sim.on["input:0"], true);
-  assert.ok(sim.faders["input:0"] > NEG_INF);
+  sim.run(20);
+  assert.equal(sim.faders["input:0"], NEG_INF);
+  assert.equal(sim.faders["input:1"], NEG_INF, "never used since the start → down as well");
+  assert.equal(sim.on["input:0"], true, "ON stays as it is (monitor mixes)");
 });
 
 test("a mic switched off by hand while talking stays off until it was quiet", () => {
@@ -160,6 +166,8 @@ test("a manual fader move pauses the channel and is remembered", () => {
   assert.equal(sim.faders["input:0"], -800);
   assert.match(sim.al.getStatus().message, /von Hand/);
   assert.equal(sim.al.config.learned["input:0"], -800);
+  sim.run(8);
+  assert.notEqual(sim.faders["input:0"], -800, "takes over again after 5 s");
 });
 
 test("console rounding is not taken for a manual move", () => {
@@ -173,21 +181,50 @@ test("console rounding is not taken for a manual move", () => {
   assert.doesNotMatch(sim.al.getStatus().message, /von Hand/);
 });
 
-test("feedback cuts immediately, blocks raising and opening", () => {
+test("feedback cuts 6 dB, remembers a limit and blocks opening", () => {
   const sim = church({ faders: { "input:0": 300 }, on: { "input:0": true } });
+  sim.al.config.ceiling = 10;
   sim.al.start();
   sim.run(25);
   sim.talk("input:0", -10);
   sim.run(3);
   const before = sim.faders["input:0"];
-  sim.setFeedback(true);
-  sim.run(1);
-  assert.ok(sim.faders["input:0"] <= before - 300, `cut ${before} → ${sim.faders["input:0"]}`);
-  assert.match(sim.al.getStatus().message, /Rückkopplung\?/);
-  sim.setFeedback(false);
+  sim.setFeedback("input:0");
+  sim.run(1.5);
+  const limit = sim.al.config.limits["input:0"];
+  assert.ok(limit !== undefined, "limit remembered");
+  assert.ok(sim.faders["input:0"] <= limit - 300, `cut 6 dB = at least 3 dB below the limit (${sim.faders["input:0"]})`);
+  assert.ok(limit < before + 500, `limit ${limit} near the feedback position (${before})`);
+  assert.match(sim.al.getStatus().event ?? "", /Pfeifen erkannt: Kanzel/);
+  sim.setFeedback(null);
   sim.talk("input:1");
   sim.run(2);
   assert.equal(sim.on["input:1"], false, "nothing opened right after feedback");
+  // a very quiet speaker later: the fader never goes above the limit again
+  sim.talk("input:0", -20);
+  sim.run(40);
+  assert.ok(sim.faders["input:0"] <= limit!, `${sim.faders["input:0"]} ≤ ${limit}`);
+  assert.match(sim.al.getStatus().message, /Pfeifgrenze/);
+});
+
+test("applause (steady room, no steady speaker mic) is not taken for feedback", () => {
+  const sim = church({ faders: { "input:0": 0 }, on: { "input:0": true } });
+  sim.al.start();
+  sim.run(25);
+  sim.talk("input:0");
+  sim.run(3);
+  const before = sim.faders["input:0"];
+  // loud steady room, the pulpit mic keeps its speech pattern
+  const al = sim.al as any;
+  for (let i = 0; i < 20; i++) {
+    sim.skip(100);
+    const word = i % 10 < 8;
+    al.setMeters(new Map([["input:0", word ? 80 : 50], ["input:1", 22], ["input:2", 116]]));
+    if (i % 2) al.tick();
+  }
+  assert.equal(Object.keys(sim.al.config.limits).length, 0, "no feedback limit");
+  assert.equal(sim.al.getStatus().feedback, false);
+  assert.ok(before > NEG_INF);
 });
 
 test("opens without room level, but holds the fader", () => {

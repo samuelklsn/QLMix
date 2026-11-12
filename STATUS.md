@@ -1,6 +1,6 @@
 # STATUS – QLMix
 
-Stand: 2026-11-12 · Version **1.5.0** veröffentlicht (Release `v1.5.0`)
+Stand: 2026-11-12 · Version **1.6.0** veröffentlicht (Release `v1.6.0`)
 
 ## Fertig
 
@@ -60,12 +60,21 @@ Stand: 2026-11-12 · Version **1.5.0** veröffentlicht (Release `v1.5.0`)
 - Kanal-Listen zeigen nur gewählte Kanäle, „Ändern“ klappt alle 72 auf.
 - Simulator: `--room <n>` simuliert ein Raum-Mikro (hört den Sprecher über die Anlage); Fehler behoben, dass nach Server-Neustart keine Meter mehr kamen.
 
+**1.6.0: Pfeifschutz, Übernahme, schneller**
+- Samuels Rückmeldung zu 1.5: funktioniert gut; beim Mikro-/Positionswechsel pfiff es; Handgriff stoppte die Automatik zu lange; Darstellung/Auswahl hakte.
+- Pfeifen = Raum-Mikros UND ein offenes Sprecher-Mikro 1 s lang ohne Pause (Spanne ≤ 6 dB), Raum über Ziel + 3 dB → −6 dB, Grenze = Stellung − 3 dB (`limits`), 10 s kein Anheben/Öffnen. Applaus/Musik bewegen das Sprecher-Mikro nicht gleichmäßig → kein Auslösen (Test).
+- Fader aller Sprecher-Mikros gehen nach `closeAfter` s Stille auf −∞ (ON bleibt). Zählt ab dem Start, also auch für vorher von Hand geöffnete Mikros.
+- Öffnen nach 0,25 s (vorher 0,5 s), direkt auf die gemerkte Stellung (höchstens Pfeifgrenze).
+- Handgriff: 5 s Pause (vorher 20 s), Stellung wird gemerkt.
+- EQ automatisch gegen Pfeifen: nicht möglich, weil das Pult nur Pegel liefert (keine Frequenzen).
+- UI: Auswahl wirkt sofort (lokal, ohne auf den Server zu warten), Regler zeigen den Wert beim Ziehen, Pfeifgrenze an den Kacheln, „Pfeifgrenzen zurücksetzen“.
+
 **Sonstiges**
 - 15 Web-Tests grün, `svelte-check` 0 Fehler.
 
 ## In Arbeit
 
-- 1.5.0 auf dem Windows-PC einspielen, Raum-Mikros auswählen und am echten Pult testen.
+- 1.6.0 auf dem Windows-PC einspielen und am echten Pult testen (Pfeifschutz, Fader runter nach Stille).
 - Die Raum-Automatik ist in der **Testphase** (Badge „Test“ im UI). Der Nutzer testet sie im echten Raum.
 
 ## Nächste Schritte
@@ -75,7 +84,9 @@ Stand: 2026-11-12 · Version **1.5.0** veröffentlicht (Release `v1.5.0`)
 - **Samuel fragen, welche Funktionen ihm am meisten fehlen.** Vorschläge waren Mute-Gruppen, Pan, Sends eines Kanals auf alle Mixe, Szenen speichern. Er hat noch nicht geantwortet.
 
 - 1.2.0 auf dem Windows-PC einspielen (`update.cmd`) und am echten Pult und iPhone prüfen. Die Rückmeldung des Nutzers steht noch aus.
-- **Raum-Automatik (1.5) im echten Raum testen.**
+- **Raum-Automatik (1.6) im echten Raum testen.**
+  - Löst der Pfeifschutz rechtzeitig aus? Löst er fälschlich aus (z. B. lang gezogene Vokale)? Dann `STEADY_DB`/`FEEDBACK_WINDOW_MS` anpassen.
+  - Offene Frage: Display-Fehler, den Samuel gesehen hat, ist nicht genau bekannt (Screenshot erbeten).
   - Welche Kanäle sind die Raum-Mikros? Liefern sie genug Pegel (Sprache deutlich über Ruhe)?
   - Prüfen, ob ausgeschaltete Mikros zuverlässig geöffnet werden und nicht durch Übersprechen.
   - Schwellen ggf. anpassen (`OPEN_EXCESS`, `DOMINANCE`, `CONFIRM_MS` in `autolevel.ts`).

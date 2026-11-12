@@ -17,6 +17,8 @@ des Pults; bedient wird **im Browser** auf jedem Handy, Tablet oder Computer.
 * **Neu in 1.4**: Raum-Automatik öffnet ausgeschaltete Mikros selbst, merkt sich pro Mikro die passende Faderstellung
   und schließt Mikros nach einer Pause wieder
 * **Neu in 1.5**: Raum-Automatik misst über die Raum-Mikros am Pult statt über ein Handy
+* **Neu in 1.6**: Raum-Automatik mit Pfeifschutz (merkt sich pro Mikro eine Pfeifgrenze), übernimmt beim Start alle
+  Sprecher-Mikros, zieht stille Mikros runter und öffnet schneller
 
 <p align="center"><img src="docs/img/web/mixer-desktop.png" width="820" alt="QLMix im Browser: Kanalzüge und daneben der Kanal-Bereich mit Pegel, Fader und EQ"></p>
 
@@ -124,16 +126,21 @@ Weitere Details zur Web-Version (Bedienung, Musiker-Links, PIN, Mac/Linux): **[w
 ## Raum-Automatik (Testphase)
 
 Die Raum-Mikrofone, die im Raum hängen und am Pult angeschlossen sind, messen, wie laut die Sprache ankommt.
-Für alle Sprecher-Mikros gilt **eine** Ziel-Lautstärke. So arbeitet die Automatik (ab Version 1.5):
+Für alle Sprecher-Mikros gilt **eine** Ziel-Lautstärke. So arbeitet die Automatik (ab Version 1.6):
 
 1. **Wer spricht?** QLMix sieht am Pult-Pegel (vor EQ, ON und Fader), in welches Mikro gerade gesprochen wird –
    auch wenn der Kanal aus ist oder der Fader ganz unten steht.
-2. **Mikro öffnen:** Spricht jemand eine halbe Sekunde lang deutlich hinein, schaltet QLMix den Kanal ein und zieht
-   den Fader auf die Stellung, bei der dieses Mikro zuletzt gepasst hat (beim allerersten Mal auf −10 dB).
+2. **Mikro öffnen:** Spricht jemand deutlich hinein, schaltet QLMix den Kanal nach etwa einer Viertelsekunde ein und
+   zieht den Fader sofort auf die Stellung, bei der dieses Mikro zuletzt gepasst hat (beim allerersten Mal auf −10 dB).
 3. **Nachregeln:** Danach zieht QLMix den Fader nach dem Pegel der Raum-Mikros, bis die Ziel-Lautstärke erreicht ist.
    Spricht jemand lauter oder leiser, zieht der Fader nach. Die passende Stellung merkt sich QLMix fürs nächste Mal.
-4. **Wieder schließen:** Ist in ein Mikro, das QLMix selbst geöffnet hat, 30 Sekunden lang niemand mehr hineingesprochen,
-   stellt QLMix es wieder so wie vorher (Fader zurück, Kanal aus). Mikros, die du selbst offen hattest, bleiben offen.
+4. **Fader runter bei Stille:** Spricht in ein Sprecher-Mikro 30 Sekunden lang niemand (einstellbar 15 s – 2 min),
+   geht sein Fader ganz runter. Das gilt für alle ausgewählten Sprecher-Mikros, auch die, die du vorher selbst
+   aufgemacht hast. ON bleibt, wie es ist (wegen der Monitormixe).
+5. **Pfeifschutz:** Sprache hat immer kleine Pausen, Pfeifen nicht. Bleiben Raum-Mikro und Sprecher-Mikro etwa eine
+   Sekunde lang ohne Pause laut, nimmt QLMix dieses Mikro sofort 6 dB zurück und merkt sich 3 dB unter der Stelle, an
+   der es gepfiffen hat, eine **Pfeifgrenze**. Darüber geht der Fader nie wieder. Die Grenze steht beim Mikro und lässt
+   sich unter **Regeln → Pfeifgrenzen zurücksetzen** löschen.
 
 Ein Handy wird dafür nicht mehr gebraucht (bis Version 1.4 hat ein Handy in der Raummitte gemessen).
 
@@ -153,16 +160,16 @@ der Fader folgt nach ein bis zwei Sekunden.
 **Wichtig:** Wird der **Gain der Raum-Mikros** am Pult geändert, „So soll es klingen“ neu drücken.
 
 Unter **Regeln** lassen sich einstellen: Faderstellung beim ersten Öffnen, Fader nie unter / nie über
-(Standard −20 dB / +5 dB), wann wieder geschlossen wird (15 s – 2 min) und das Tempo.
+(Standard −20 dB / +5 dB), nach wie viel Stille der Fader runtergeht (15 s – 2 min) und das Tempo.
 
 **Sicherheit:**
 * Die Automatik schaltet und bewegt nur die ausgewählten Sprecher-Mikros, nie die Raum-Mikros.
 * Ein Mikro wird nur geöffnet, wenn es deutlich lauter ist als alle anderen. Ein Mikro, das den Redner nur von
   weitem mithört, bleibt zu.
-* Fader, die jemand von Hand bewegt, bleiben 20 Sekunden in Ruhe; die neue Stellung wird gemerkt.
+* Bewegst du einen Fader von Hand, merkt sich QLMix die Stellung und übernimmt nach 5 Sekunden wieder.
 * Schaltest du ein Mikro aus, während jemand hineinspricht, bleibt es aus, bis 10 Sekunden niemand mehr hineinspricht.
-* Ist der Raum eine Sekunde lang ohne Pause viel lauter als das Ziel (Rückkopplung), wird sofort um 3 dB abgesenkt,
-  und kurz wird nichts angehoben oder geöffnet.
+* Nach Pfeifen wird 10 Sekunden lang nichts angehoben oder geöffnet.
+* Den EQ stellt QLMix nicht automatisch gegen Pfeifen ein: Das Pult liefert nur Pegel, keine Frequenzen.
 * Ohne Pegel vom Pult (z. B. QL Editor läuft auf demselben PC) wartet die Automatik und bewegt nichts.
 * Bei Musik die Automatik ausschalten. **Vor dem ersten Einsatz im Gottesdienst in Ruhe testen.**
 

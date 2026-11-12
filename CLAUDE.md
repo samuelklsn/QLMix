@@ -18,12 +18,13 @@
     - Seit 1.5 messen Raum-Mikros am Pult (`roomMics`, Pegel vor EQ über das Editor-Protokoll), wie laut es im Raum ankommt. Bis 1.4 maß ein Handy.
     - Der Server erkennt das sprechende Mikro (Pult-Pegel über dem eigenen Grundrauschen).
     - Er regelt dessen Fader auf eine Ziel-Lautstärke.
-    - Seit 1.4: schaltet ausgeschaltete Mikros selbst ein, merkt sich pro Mikro die Faderstellung (`learned`) und stellt selbst geöffnete Mikros nach Stille wieder zurück.
+    - Seit 1.4: schaltet ausgeschaltete Mikros selbst ein und merkt sich pro Mikro die Faderstellung (`learned`).
+    - Seit 1.6: übernimmt beim Start alle Sprecher-Mikros, Fader nach `closeAfter` s Stille auf −∞ (ON bleibt), Pfeifschutz mit Grenze pro Mikro (`limits`), Handgriff = 5 s Pause.
 - **Produktivbetrieb:** auf einem Windows-PC des Nutzers, Autostart beim Booten.
 - **Mac-App** (Swift, `Sources/QLMix`): der erste Prototyp. Sie kann kein EQ über RCP, weil das Pult EQ nicht über RCP anbietet.
   - TODO: klären, ob die Mac-App noch weiterentwickelt werden soll. Seit der Web-Version wurde sie nicht mehr angefasst.
 - **Repo:** https://github.com/samuelklsn/QLMix (öffentlich, Branch `main`)
-  - Aktuelle Version **1.5.0**, Releases als GitHub-Release mit Tag `vX.Y.Z`.
+  - Aktuelle Version **1.6.0**, Releases als GitHub-Release mit Tag `vX.Y.Z`.
 
 ## Tech-Stack
 

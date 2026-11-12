@@ -229,6 +229,7 @@ function handleAuto(client: Client, m: any) {
     case "stop": auto.stop(); console.log("[Auto] Raum-Automatik gestoppt"); break;
     case "reference": error = auto.takeReference(); saveAuto(); break;
     case "forget": auto.config.learned = {}; saveAuto(); break;
+    case "forgetLimits": auto.config.limits = {}; saveAuto(); break;
     case "config": {
       const c = m.config ?? {};
       const num = (v: unknown, lo: number, hi: number, d: number) => (typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);

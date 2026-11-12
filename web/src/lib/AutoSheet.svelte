@@ -38,6 +38,16 @@
   const fmt = (db: number | null | undefined) => (db === null || db === undefined ? "–" : `${db.toFixed(1)} dB`);
   const speeds = [{ v: 0.5, l: "Langsam" }, { v: 1, l: "Normal" }, { v: 2, l: "Schnell" }];
   const closeTimes = [15, 30, 60, 120];
+
+  // Sliders: show the value while dragging, send it on release.
+  type SliderKey = "offset" | "startLevel" | "minLevel" | "ceiling";
+  let draft = $state<Partial<Record<SliderKey, number>>>({});
+  const val = (k: SliderKey): number => draft[k] ?? cfg?.[k] ?? 0;
+  const drag = (k: SliderKey, e: Event) => { draft[k] = Number((e.currentTarget as HTMLInputElement).value); };
+  function commit(k: SliderKey, e: Event) {
+    store.autoAction("config", { [k]: Number((e.currentTarget as HTMLInputElement).value) });
+    delete draft[k];
+  }
   const dbText = (db: number) => `${db > 0 ? "+" : db < 0 ? "−" : ""}${Math.abs(Math.round(db * 10) / 10)} dB`;
 
   /** What is still missing before the automatic can start – shown as a checklist. */
@@ -101,10 +111,10 @@
                 {#if m.blocked}<em class="warn">Von Hand zu</em>
                 {:else if m.speaking && m.open}<em class="ok">Spricht</em>
                 {:else if m.speaking}<em class="warn">Spricht · zu</em>
-                {:else if m.opened && m.closesIn !== null}<em>{m.closesIn > cfg.closeAfter - 5 ? "Offen" : `Zu in ${m.closesIn} s`}</em>
+                {:else if m.closesIn !== null && m.closesIn <= cfg.closeAfter - 5}<em>Runter in {m.closesIn} s</em>
+                {:else if m.fader === null}<em>Fader zu</em>
                 {:else if !m.on}<em>Aus</em>
-                {:else if !m.open}<em>Fader zu</em>
-                {:else}<em>Ruhig</em>{/if}
+                {:else}<em>Offen</em>{/if}
               </span>
             </div>
           {/each}
@@ -115,16 +125,17 @@
 
     <!-- 1 Room mics -->
     <section>
-      <h3 class="step"><span class="stepn">1</span>Raum-Mikrofone
-        {#if cfg.roomMics.length}<button class="pill edit" onclick={() => (editRoom = !editRoom)}>{editRoom ? "Fertig" : "Ändern"}</button>{/if}
-      </h3>
+      <div class="stephead">
+        <h3 class="step"><span class="stepn">1</span>Raum-Mikrofone</h3>
+        {#if cfg.roomMics.length}<button class="pill" aria-expanded={editRoom} onclick={() => (editRoom = !editRoom)}>{editRoom ? "Fertig" : "Ändern"}</button>{/if}
+      </div>
       <div class="chgrid">
         {#each roomList as c}
           {@const room = isRoom(c)}
           <button class="ch" class:sel={room} aria-pressed={room} onclick={() => toggleRoom(c)}>
             <span class="n">{channelLabel(c)}</span>
             <b>{name(c)}</b>
-            {#if selected(c)}<span class="corr">Sprecher</span>{/if}
+            {#if selected(c)}<span class="corr">Sprecher-Mikro</span>{/if}
           </button>
         {/each}
       </div>
@@ -155,9 +166,9 @@
         {#if store.autoError && store.autoErrorAction === "reference"}<p class="err" role="alert">{store.autoError}</p>{/if}
         {#if store.autoOk}<p class="okmsg"><Icon name="check" size={15} /> {store.autoOk}</p>{/if}
         <div class="ctrl">
-          <div class="lbl"><span>Leiser</span><b class="num">{cfg.offset > 0 ? "+" : ""}{cfg.offset.toFixed(1)} dB</b><span>Lauter</span></div>
-          <input type="range" min="-10" max="10" step="0.5" value={cfg.offset} aria-label="Ziel anpassen"
-            onchange={(e) => store.autoAction("config", { offset: Number(e.currentTarget.value) })} />
+          <div class="lbl"><span>Leiser</span><b class="num">{val("offset") > 0 ? "+" : ""}{val("offset").toFixed(1)} dB</b><span>Lauter</span></div>
+          <input type="range" min="-10" max="10" step="0.5" value={val("offset")} aria-label="Ziel anpassen"
+            oninput={(e) => drag("offset", e)} onchange={(e) => commit("offset", e)} />
         </div>
       </div>
       <p class="hint t-footnote">Drücken, während eine Person normal spricht und es im Raum gut klingt – das wird das Ziel für alle Sprecher-Mikros.
@@ -166,18 +177,21 @@
 
     <!-- 3 Channels -->
     <section>
-      <h3 class="step"><span class="stepn">3</span>Sprecher-Mikrofone
-        {#if cfg.channels.length}<button class="pill edit" onclick={() => (editSpeakers = !editSpeakers)}>{editSpeakers ? "Fertig" : "Ändern"}</button>{/if}
-      </h3>
+      <div class="stephead">
+        <h3 class="step"><span class="stepn">3</span>Sprecher-Mikrofone</h3>
+        {#if cfg.channels.length}<button class="pill" aria-expanded={editSpeakers} onclick={() => (editSpeakers = !editSpeakers)}>{editSpeakers ? "Fertig" : "Ändern"}</button>{/if}
+      </div>
       <div class="chgrid">
         {#each speakerList as c}
           {@const sel = selected(c)}
           {@const learned = cfg.learned[`${c.kind}:${c.index}`]}
+          {@const limit = cfg.limits?.[`${c.kind}:${c.index}`]}
           <button class="ch" class:sel class:active={st.activeKey === `${c.kind}:${c.index}`} aria-pressed={sel} onclick={() => toggleChannel(c)}>
             <span class="n">{channelLabel(c)}</span>
             <b>{name(c)}</b>
             {#if sel && learned !== undefined}<span class="corr num">gemerkt {dbText(learned / 100)}</span>{/if}
-            {#if isRoom(c)}<span class="corr">Raum</span>{/if}
+            {#if sel && limit !== undefined}<span class="corr warn num">Pfeifgrenze {dbText(limit / 100)}</span>{/if}
+            {#if isRoom(c)}<span class="corr">Raum-Mikro</span>{/if}
           </button>
         {/each}
       </div>
@@ -190,20 +204,20 @@
       <h3 class="step"><span class="stepn">4</span>Regeln</h3>
       <div class="group">
         <div class="ctrl">
-          <div class="lbl"><span>Erstes Öffnen auf</span><b class="num">{dbText(cfg.startLevel)}</b></div>
-          <input type="range" min="-30" max="5" step="1" value={cfg.startLevel} aria-label="Faderstellung beim ersten Öffnen" onchange={(e) => store.autoAction("config", { startLevel: Number(e.currentTarget.value) })} />
+          <div class="lbl"><span>Erstes Öffnen auf</span><b class="num">{dbText(val("startLevel"))}</b></div>
+          <input type="range" min="-30" max="5" step="1" value={val("startLevel")} aria-label="Faderstellung beim ersten Öffnen" oninput={(e) => drag("startLevel", e)} onchange={(e) => commit("startLevel", e)} />
         </div>
         <div class="ctrl">
-          <div class="lbl"><span>Fader nie unter</span><b class="num">{dbText(cfg.minLevel)}</b></div>
-          <input type="range" min="-40" max="-5" step="1" value={cfg.minLevel} aria-label="Fader-Untergrenze" onchange={(e) => store.autoAction("config", { minLevel: Number(e.currentTarget.value) })} />
+          <div class="lbl"><span>Fader nie unter</span><b class="num">{dbText(val("minLevel"))}</b></div>
+          <input type="range" min="-40" max="-5" step="1" value={val("minLevel")} aria-label="Fader-Untergrenze" oninput={(e) => drag("minLevel", e)} onchange={(e) => commit("minLevel", e)} />
         </div>
         <div class="ctrl">
-          <div class="lbl"><span>Fader nie über</span><b class="num">{dbText(cfg.ceiling)}</b></div>
-          <input type="range" min="-10" max="10" step="1" value={cfg.ceiling} aria-label="Fader-Obergrenze" onchange={(e) => store.autoAction("config", { ceiling: Number(e.currentTarget.value) })} />
+          <div class="lbl"><span>Fader nie über</span><b class="num">{dbText(val("ceiling"))}</b></div>
+          <input type="range" min="-10" max="10" step="1" value={val("ceiling")} aria-label="Fader-Obergrenze" oninput={(e) => drag("ceiling", e)} onchange={(e) => commit("ceiling", e)} />
         </div>
         <div class="ctrl">
-          <div class="lbl"><span>Wieder schließen nach Stille</span></div>
-          <div class="segmented" role="radiogroup" aria-label="Wieder schließen nach">
+          <div class="lbl"><span>Fader runter, wenn niemand spricht, nach</span></div>
+          <div class="segmented" role="radiogroup" aria-label="Fader runter nach Stille">
             {#each closeTimes as t}
               <button role="radio" aria-checked={cfg.closeAfter === t} class:sel={cfg.closeAfter === t} onclick={() => store.autoAction("config", { closeAfter: t })}>{t < 60 ? `${t} s` : `${t / 60} min`}</button>
             {/each}
@@ -220,13 +234,16 @@
         {#if Object.keys(cfg.learned).length > 0}
           <button class="pill" onclick={() => store.autoAction("forget")}>Gemerkte Faderstellungen vergessen</button>
         {/if}
+        {#if Object.keys(cfg.limits ?? {}).length > 0}
+          <button class="pill" onclick={() => store.autoAction("forgetLimits")}>Pfeifgrenzen zurücksetzen</button>
+        {/if}
       </div>
     </section>
 
-    <p class="t-footnote">Spricht jemand deutlich in ein ausgewähltes Mikro, schaltet die Automatik es ein und zieht den Fader auf die gemerkte Stellung.
-      Danach regelt sie nach dem Pegel der Raum-Mikros. Mikros, die sie selbst geöffnet hat, stellt sie nach der Stille wieder so wie vorher.
-      Fader, die du selbst bewegst, lässt sie 20 Sekunden in Ruhe. Schaltest du ein Mikro aus, während jemand hineinspricht, bleibt es aus.
-      Ist der Raum plötzlich viel zu laut (Rückkopplung), wird sofort um 3 dB abgesenkt. Bei Musik bitte ausschalten.</p>
+    <p class="t-footnote">Spricht jemand deutlich in ein ausgewähltes Mikro, schaltet die Automatik es ein und zieht den Fader sofort auf die gemerkte Stellung.
+      Danach regelt sie nach dem Pegel der Raum-Mikros. Spricht in ein Mikro länger niemand, geht sein Fader ganz runter.
+      Bewegst du einen Fader selbst, merkt sie sich die Stellung und macht nach 5 Sekunden weiter. Schaltest du ein Mikro aus, während jemand hineinspricht, bleibt es aus.
+      Pfeift es, nimmt sie das Mikro sofort 6 dB zurück und merkt sich eine Pfeifgrenze, über die es nicht mehr geht. Bei Musik bitte ausschalten.</p>
   {/if}
 </Sheet>
 
@@ -280,8 +297,9 @@
   .lbl { display: flex; justify-content: space-between; font-size: var(--fs-footnote); color: var(--label-2); }
   .lbl b { color: var(--label); font-weight: 600; }
 
-  .step .edit { margin-left: auto; }
-  .chgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: var(--s2); }
+  .stephead { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); margin-bottom: var(--s3); }
+  .stephead .step { margin-bottom: 0; }
+  .chgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: var(--s2); }
   .ch {
     display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
     min-height: 56px; padding: var(--s2) var(--s3);
@@ -296,7 +314,8 @@
   .ch.sel { background: rgba(0, 113, 227, 0.18); box-shadow: inset 0 0 0 1.5px var(--accent-text); }
   .ch.sel .n { color: var(--accent-text); }
   .ch.active { box-shadow: inset 0 0 0 1.5px var(--accent-text), 0 0 0 3px rgba(48, 209, 88, 0.55); }
-  .ch .corr { font-size: var(--fs-caption); color: var(--label-2); }
+  .ch .corr.warn { color: var(--warn); }
+  .ch .corr { font-size: var(--fs-caption); color: var(--label-2); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 
   .mics { gap: var(--s2); }
   .mic { display: grid; grid-template-columns: minmax(70px, 110px) 1fr 96px; align-items: center; gap: var(--s3); font-size: var(--fs-callout); min-height: 28px; }
