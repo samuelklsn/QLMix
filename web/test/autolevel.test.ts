@@ -7,8 +7,8 @@ const NEG_INF = -32768;
 const key = (c: ChannelId) => `${c.kind}:${c.index}`;
 
 /**
- * Simulated church with two speaker mics: CH 1 "Kanzel" and CH 2 "Pult".
- * Console meters (pre-EQ, before ON/fader) show who talks; the phone in the room hears
+ * Simulated church with two speaker mics: CH 1 "Kanzel" and CH 2 "Pult", and a room mic on CH 3.
+ * Console meters (pre-EQ, before ON/fader) show who talks; the room mic hears
  * voice + fader of the talking mic, but only if that channel is ON.
  */
 function church(start: { faders?: Record<string, number>; on?: Record<string, boolean> } = {}) {
@@ -23,12 +23,14 @@ function church(start: { faders?: Record<string, number>; on?: Record<string, bo
     setOn: (c: ChannelId, v: boolean) => { on[key(c)] = v; },
     label: (c: ChannelId) => (c.index === 0 ? "Kanzel" : "Pult"),
   };
-  const al = new AutoLevel(io, { channels: [{ kind: "input", index: 0 }, { kind: "input", index: 1 }], reference: -30 });
+  const al = new AutoLevel(io, {
+    channels: [{ kind: "input", index: 0 }, { kind: "input", index: 1 }], roomMics: [{ kind: "input", index: 2 }], reference: -30,
+  });
   /** Who talks (mic key) and how loud the voice is (dB, 0 = normal speaker). */
   let talker: string | null = null;
   let voice = 0;
   let feedback = false;
-  /** Runs `seconds` in 100 ms steps: meters every step, room every 2nd, controller every 2nd. */
+  /** Runs `seconds` in 100 ms steps: meters (incl. room mic) every step, controller every 2nd. */
   const run = (seconds: number) => {
     for (let i = 0; i < seconds * 10; i++) {
       now += 100;
@@ -38,11 +40,11 @@ function church(start: { faders?: Record<string, number>; on?: Record<string, bo
         const noise = (k === "input:0" ? 50 : 20) + (i % 3);   // Kanzel has much more gain
         meters.set(k, talker === k && word ? noise + 30 + voice : talker && word ? noise + 4 : noise);
       }
+      const audible = talker !== null && word && on[talker] && faders[talker] > NEG_INF;
+      const roomDb = feedback ? -10 : audible ? voice + faders[talker!] / 100 - 30 + Math.sin(i) : -70 + Math.random();
+      meters.set("input:2", Math.round(roomDb + 126));
       al.setMeters(meters);
-      if (i % 2 === 0) {
-        const audible = talker !== null && word && on[talker] && faders[talker] > NEG_INF;
-        al.addRoomSample(audible ? voice + faders[talker!] / 100 - 30 + Math.sin(i) : -70 + Math.random(), feedback);
-      } else al.tick();
+      if (i % 2 === 1) al.tick();
     }
   };
   return {
@@ -181,19 +183,19 @@ test("feedback cuts immediately, blocks raising and opening", () => {
   sim.setFeedback(true);
   sim.run(1);
   assert.ok(sim.faders["input:0"] <= before - 300, `cut ${before} → ${sim.faders["input:0"]}`);
-  assert.match(sim.al.getStatus().message, /Rückkopplung/);
+  assert.match(sim.al.getStatus().message, /Rückkopplung\?/);
   sim.setFeedback(false);
   sim.talk("input:1");
   sim.run(2);
   assert.equal(sim.on["input:1"], false, "nothing opened right after feedback");
 });
 
-test("opens without the phone, but holds the fader without a measurement", () => {
+test("opens without room level, but holds the fader", () => {
   const sim = church();
   sim.al.start();
   sim.run(25);
   sim.talk("input:0");
-  // only meters, no room samples
+  // speaker meters only, no room mic
   for (let i = 0; i < 20; i++) {
     sim.skip(100);
     sim.al.setMeters(new Map([["input:0", 80 + (i % 10 < 8 ? 0 : -30)], ["input:1", 20]]));
@@ -201,11 +203,14 @@ test("opens without the phone, but holds the fader without a measurement", () =>
   }
   assert.equal(sim.on["input:0"], true);
   assert.equal(sim.faders["input:0"], -1000);
-  assert.match(sim.al.getStatus().message, /keine Messung vom Handy/);
+  assert.match(sim.al.getStatus().message, /kein Pegel von den Raum-Mikros/);
 });
 
-test("needs channels and a reference before starting", () => {
+test("needs room mics, channels and a reference before starting", () => {
   const sim = church();
+  sim.al.config.roomMics = [];
+  assert.match(sim.al.start()!, /Raum-Mikrofone/);
+  sim.al.config.roomMics = [{ kind: "input", index: 2 }];
   sim.al.config.channels = [];
   assert.match(sim.al.start()!, /Mikrofone/);
   sim.al.config.channels = [{ kind: "input", index: 0 }];
@@ -260,4 +265,47 @@ test("a long speech with few pauses keeps the mic open", () => {
     assert.equal(sim.al.getStatus().active, "Kanzel", `after ${(i + 1) * 10} s`);
   }
   assert.equal(sim.on["input:0"], true);
+});
+
+test("follows a speaker who gets louder and quieter", () => {
+  const sim = church({ faders: { "input:0": 0 }, on: { "input:0": true } });
+  sim.al.config.ceiling = 10;
+  sim.al.start();
+  sim.run(25);
+  sim.talk("input:0", 0);
+  sim.run(15);
+  const normal = sim.faders["input:0"];
+  assert.ok(Math.abs(normal) <= 150, `normal ${normal}`);
+  sim.talk("input:0", 5);                          // speaks 5 dB louder
+  sim.run(20);
+  assert.ok(Math.abs(sim.faders["input:0"] - (normal - 500)) <= 150, `louder → ${sim.faders["input:0"]}`);
+  sim.talk("input:0", -4);                         // and then quieter
+  sim.run(25);
+  assert.ok(Math.abs(sim.faders["input:0"] - 400) <= 150, `quieter → ${sim.faders["input:0"]}`);
+});
+
+test("averages two room mics and ignores speech pauses", () => {
+  let now = 0;
+  const io = { now: () => now, fader: () => 0, isOn: () => true, setFader: () => {}, setOn: () => {}, label: () => "CH" };
+  const al = new AutoLevel(io, {
+    channels: [{ kind: "input", index: 0 }], roomMics: [{ kind: "input", index: 2 }, { kind: "input", index: 3 }], reference: -30,
+  });
+  for (let i = 0; i < 100; i++) {
+    now += 100;
+    const word = i % 10 < 7;
+    al.setMeters(new Map([["input:0", 20], ["input:2", word ? 96 : 50], ["input:3", word ? 96 : 50]]));
+  }
+  assert.equal(al.takeReference(), null);
+  assert.equal(al.config.reference, -30);
+});
+
+test("waits without console meters instead of guessing the speaker", () => {
+  let now = 0;
+  const io = { now: () => now, fader: () => 0, isOn: () => true, setFader: () => { throw new Error("must not move"); }, setOn: () => {}, label: () => "CH" };
+  const al = new AutoLevel(io, { channels: [{ kind: "input", index: 0 }], roomMics: [{ kind: "input", index: 2 }], reference: -30 });
+  al.start();
+  now += 5000;
+  al.tick();
+  assert.match(al.getStatus().message, /Keine Pegel vom Pult/);
+  assert.equal(al.getStatus().active, null);
 });

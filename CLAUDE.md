@@ -15,7 +15,7 @@
   - EQ und HPF mit grafischer Kurve, Gain, Name/Farbe, Szenenaufruf, Meter, optionale PIN
   - Dynamics (Gate/Kompressor …) und Premium Rack: **vorbereitet**, die Anzeige-Einheiten sind noch nicht am Pult abgeglichen
   - **Raum-Automatik** (seit 1.1, Testphase):
-    - Ein Handy misst in der Raummitte über das Mikrofon.
+    - Seit 1.5 messen Raum-Mikros am Pult (`roomMics`, Pegel vor EQ über das Editor-Protokoll), wie laut es im Raum ankommt. Bis 1.4 maß ein Handy.
     - Der Server erkennt das sprechende Mikro (Pult-Pegel über dem eigenen Grundrauschen).
     - Er regelt dessen Fader auf eine Ziel-Lautstärke.
     - Seit 1.4: schaltet ausgeschaltete Mikros selbst ein, merkt sich pro Mikro die Faderstellung (`learned`) und stellt selbst geöffnete Mikros nach Stille wieder zurück.
@@ -23,7 +23,7 @@
 - **Mac-App** (Swift, `Sources/QLMix`): der erste Prototyp. Sie kann kein EQ über RCP, weil das Pult EQ nicht über RCP anbietet.
   - TODO: klären, ob die Mac-App noch weiterentwickelt werden soll. Seit der Web-Version wurde sie nicht mehr angefasst.
 - **Repo:** https://github.com/samuelklsn/QLMix (öffentlich, Branch `main`)
-  - Aktuelle Version **1.4.0**, Releases als GitHub-Release mit Tag `vX.Y.Z`.
+  - Aktuelle Version **1.5.0**, Releases als GitHub-Release mit Tag `vX.Y.Z`.
 
 ## Tech-Stack
 
@@ -39,7 +39,7 @@
 - Tests: `node --test` (eingebauter Test-Runner).
 - Ports:
   - HTTP **8080**
-  - HTTPS **8443** (nötig für den Mikrofon-Zugriff im Browser, Zertifikat aus der lokalen CA in `web/certs/`)
+  - HTTPS **8443** (Zertifikat aus der lokalen CA in `web/certs/`; war für die Handy-Messung bis 1.4 nötig, wird seit 1.5 nicht mehr gebraucht)
 
 **Pult-Protokolle**
 - **RCP** (Text, TCP **49280**):
@@ -124,7 +124,6 @@ web/
 - `EqEditor.svelte`: Canvas-Kurve mit ziehbaren Punkten und Reglern pro Band.
 - `DynamicsPanel.svelte`, `RackSheet.svelte`, `SettingsSheet.svelte`, `AutoSheet.svelte`.
 - `store.svelte.ts`: zentraler Store (WebSocket, Werte-Map, Schreiben mit Touch-Schutz).
-- `room-meter.ts`: Mikrofonmessung im Browser.
 
 ## Design-System
 
@@ -224,7 +223,7 @@ Alles ist in `web/src/app.css` definiert. Es basiert auf Apples Human Interface 
   - Oberfläche, Commit-Messages, README und Release-Notes auf **Deutsch**.
   - Code-Kommentare und Bezeichner auf Englisch.
 - **Texte in der UI:**
-  - Knöpfe sagen, was passiert („Szene aufrufen“, „Mit diesem Handy messen“).
+  - Knöpfe sagen, was passiert („Szene aufrufen“, „So soll es klingen“).
   - Groß am Anfang („Aus“, „Spricht“, „Langsam“).
   - Fehler sagen, was zu tun ist.
 - **Dateien:**
@@ -264,13 +263,14 @@ Alle Web-Befehle laufen im Ordner `web/`.
 | Build | `npm run build` (→ `web/dist`) |
 | Typprüfung | `npm run check` |
 | Tests | `npm test` bzw. `node --test test/*.test.ts` |
-| Simulator bauen/starten (im Root) | `swift build --product QLSimulator && .build/debug/QLSimulator --no-eq --talker 1` |
+| Simulator bauen/starten (im Root) | `swift build --product QLSimulator && .build/debug/QLSimulator --no-eq --talker 1 --room 3` |
 | Mac-App bauen (Root) | `./scripts/make-app.sh && open build/QLMix.app` |
 | Swift-Tests (Root) | `swift test` |
 | Release | `git push origin main`, dann `gh release create vX.Y.Z --target main --title "…" --notes-file -` |
 
 Simulator-Optionen:
 - `--no-eq`: kein EQ über RCP. So verhält sich das echte QL, und der Server nutzt dann SysEx; nur so erscheinen Dynamics und Rack.
+- `--room <n>`: simuliertes Raum-Mikro, hört den Sprecher (`--talker`) über die Anlage (Fader + ON des Sprechers).
 - `--model`, `--animate`, `--sysex-port`, `--firmware`, `--verbose`.
 
 **Testaufbau mit Simulator: `web/config.json` NICHT überschreiben lassen.**

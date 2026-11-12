@@ -1,8 +1,9 @@
 // Raum-Automatik: one target speech level in the room for every speaker microphone.
 //
-// Inputs:  room level measured by a phone in the room (dBFS, speech band, ~5 values/s),
-//          optional feedback flag from the phone, console input meters (pre-EQ, i.e. before
-//          ON and fader – so a switched-off mic still shows who is talking).
+// Inputs:  console input meters (pre-EQ, i.e. before ON and fader) of
+//          - the speaker mics: who is talking (works while a channel is switched off),
+//          - one or more room mics hanging in the room: how loud it is in the room
+//            (their channels may be off / faders down – the meter is taken before them).
 // Output:  - a mic that somebody clearly talks into is switched ON and its fader jumps to the
 //            position that last gave the target level ("learned", per mic) or the start level,
 //          - small, rate-limited fader moves on the active mic until the room hits the target,
@@ -10,13 +11,17 @@
 //
 // Safety: only selected channels, fader range [minLevel, ceiling], opening needs clear and
 // dominant speech for a moment, manual fader/ON changes win (pause, or "stay closed"),
-// feedback → immediate cut and no raising/opening, missing measurement → no fine regulation.
+// room suddenly far above the target for a second (feedback?) → immediate cut and no
+// raising/opening, missing room meters → no fine regulation.
 
 import { type ChannelId, levelToPosition } from "../shared/rcp.ts";
 
 export interface AutoConfig {
+  /** speaker mics the automatic may switch on and move */
   channels: ChannelId[];
-  /** Reference room level (dBFS on the measuring phone) – set with "So soll es klingen". */
+  /** room mics that measure the level in the room (never moved) */
+  roomMics: ChannelId[];
+  /** Reference room level (dBFS at the room mics) – set with "So soll es klingen". */
   reference: number | null;
   /** User offset in dB (louder / quieter than the reference). */
   offset: number;
@@ -30,7 +35,7 @@ export interface AutoConfig {
 }
 
 export const DEFAULT_AUTO_CONFIG: AutoConfig = {
-  channels: [], reference: null, offset: 0, speed: 1, ceiling: 5, minLevel: -20, startLevel: -10, closeAfter: 30, learned: {},
+  channels: [], roomMics: [], reference: null, offset: 0, speed: 1, ceiling: 5, minLevel: -20, startLevel: -10, closeAfter: 30, learned: {},
 };
 
 export interface AutoIO {
@@ -93,6 +98,10 @@ const FLOOR_WINDOW_MS = 20000;
 const MIC_FLOOR_WINDOW_MS = 60000;
 const MIC_FLOOR_PERCENTILE = 0.05;
 const METER_STALE_MS = 1500;
+/** Room level this far above the target without any pause … */
+const SURGE_DB = 10;
+/** … for this long counts as feedback (speech always has pauses). */
+const SURGE_MS = 1000;
 const FEEDBACK_CUT_DB = 3;
 const FEEDBACK_PAUSE_MS = 10000;
 const MANUAL_PAUSE_MS = 20000;
@@ -111,7 +120,7 @@ export const CONFIRM_MS = 500;
 /** A mic switched off by hand may be reopened after this long without speech into it. */
 export const UNBLOCK_MS = 10000;
 
-interface RoomSample { t: number; level: number; feedback: boolean }
+interface RoomSample { t: number; level: number }
 interface ChannelState {
   /** fader/ON as last seen or written by us – anything else is a manual change */
   seenFader: number | null;
@@ -168,26 +177,24 @@ export class AutoLevel {
 
   constructor(io: AutoIO, config: Partial<AutoConfig> = {}) {
     this.io = io;
-    const { channels, reference, offset, speed, ceiling, minLevel, startLevel, closeAfter, learned } = { ...DEFAULT_AUTO_CONFIG, ...config };
+    const { channels, roomMics, reference, offset, speed, ceiling, minLevel, startLevel, closeAfter, learned } = { ...DEFAULT_AUTO_CONFIG, ...config };
     // Only known fields – drops settings of older versions (maxBoost/maxCut).
-    this.config = { channels, reference, offset, speed, ceiling, minLevel, startLevel, closeAfter, learned: { ...learned } };
+    this.config = { channels, roomMics, reference, offset, speed, ceiling, minLevel, startLevel, closeAfter, learned: { ...learned } };
     this.status = this.emptyStatus("Aus");
   }
 
   // ------------------------------------------------------------ inputs
 
-  addRoomSample(level: number, feedback: boolean): void {
-    if (!Number.isFinite(level)) return;
-    const t = this.io.now();
-    this.room.push({ t, level: Math.max(-120, Math.min(0, level)), feedback });
-    const cutoff = t - FLOOR_WINDOW_MS;
-    while (this.room.length && this.room[0].t < cutoff) this.room.shift();
-  }
-
-  /** Console input meters: channel key → raw meter value (0…126). */
+  /** Console input meters: channel key → raw meter value (0…126 = dBFS + 126). */
   setMeters(levels: Map<string, number>): void {
     const t = this.io.now();
     this.meters = { t, levels };
+    // Room level: power mean of the room mics in dBFS.
+    const room = this.config.roomMics.map((c) => levels.get(ck(c))).filter((v): v is number => v !== undefined);
+    if (room.length) {
+      this.room.push({ t, level: Math.max(-126, Math.min(0, powerMean(room.map((v) => v - 126)))) });
+      while (this.room.length && this.room[0].t < t - FLOOR_WINDOW_MS) this.room.shift();
+    }
     for (const c of this.config.channels) {
       const v = levels.get(ck(c));
       if (v === undefined) continue;
@@ -201,6 +208,7 @@ export class AutoLevel {
   // ------------------------------------------------------------ control
 
   start(): string | null {
+    if (this.config.roomMics.length === 0) return "Bitte zuerst die Raum-Mikrofone auswählen.";
     if (this.config.channels.length === 0) return "Bitte zuerst Sprecher-Mikrofone auswählen.";
     if (this.config.reference === null) return "Bitte zuerst „So soll es klingen“ festlegen.";
     this.enabled = true;
@@ -238,7 +246,9 @@ export class AutoLevel {
     const speech = this.speechLevel();
     const target = this.config.reference === null ? null : this.config.reference + this.config.offset;
     const metersAvailable = !!this.meters && now - this.meters.t < METER_STALE_MS;
-    const feedback = this.room.some((s) => s.feedback && now - s.t < 600);
+    const lastSecond = this.room.filter((s) => now - s.t < SURGE_MS);
+    const feedback = fresh && target !== null && lastSecond.length >= 3 && now - lastSecond[0].t >= SURGE_MS * 0.7
+      && lastSecond.every((s) => s.level > target + SURGE_DB);
     const roomStatus = { level: fresh ? this.room[this.room.length - 1].level : null, speech, floor, target, fresh };
 
     const set = (message: string, level: AutoStatus["level"], active: ChannelId | null = null) => {
@@ -255,10 +265,15 @@ export class AutoLevel {
     };
 
     if (!this.enabled) return set("Aus", "info");
+    // Everything – who talks and how loud the room is – comes from the console meters.
+    if (!metersAvailable) {
+      this.bestKey = null;
+      return set("Keine Pegel vom Pult – Automatik wartet. Läuft der QL Editor auf demselben PC wie QLMix?", "warn");
+    }
 
     this.detectManualChanges(now);
-    const best = this.detectSpeaker(now, metersAvailable);
-    if (metersAvailable) this.closeSilentMics(now);
+    const best = this.detectSpeaker(now);
+    this.closeSilentMics(now);
 
     // Feedback first: cut, and neither raise nor open anything for a while.
     if (feedback) {
@@ -269,7 +284,7 @@ export class AutoLevel {
         st.noRaiseUntil = now + FEEDBACK_PAUSE_MS;
       }
       this.noOpenUntil = now + FEEDBACK_PAUSE_MS;
-      return set("Rückkopplung erkannt – Pegel reduziert.", "warn", best);
+      return set("Raum plötzlich viel zu laut (Rückkopplung?) – Pegel reduziert.", "warn", best);
     }
 
     if (best && !this.isOpen(best)) {
@@ -278,16 +293,12 @@ export class AutoLevel {
     }
 
     if (!best) {
-      if (!metersAvailable) {
-        const open = this.config.channels.filter((c) => this.isOpen(c));
-        return set(open.length > 1 ? "Mehrere Mikrofone offen – ohne Pult-Pegel nicht eindeutig." : "Kein Sprecher-Mikrofon offen – ohne Pult-Pegel kann die Automatik keines öffnen.", "info");
-      }
-      return set(fresh ? "Kein Mikrofon spricht gerade." : "Bereit – Mikros werden geöffnet, sobald jemand spricht. Für das Feinregeln fehlt die Messung vom Handy.", "info");
+      return set(fresh ? "Kein Mikrofon spricht gerade." : "Bereit – aber von den Raum-Mikros kommt kein Pegel. Ohne sie wird nur geöffnet, nicht nachgeregelt.", "warn");
     }
 
     const st = this.state(best);
     const name = this.io.label(best);
-    if (!fresh) return set(`${name} spricht – keine Messung vom Handy, Fader bleibt stehen.`, "warn", best);
+    if (!fresh) return set(`${name} spricht – kein Pegel von den Raum-Mikros, Fader bleibt stehen.`, "warn", best);
     if (st.pausedUntil > now) return set(`${name}: von Hand verstellt – Automatik pausiert kurz.`, "info", best);
     if (speech === null || target === null) return set(`${name}: warte auf Sprache …`, "info", best);
 
@@ -300,7 +311,8 @@ export class AutoLevel {
     if (error > 0 && st.noRaiseUntil > now) return set(`${name}: nach Rückkopplung kein Anheben.`, "warn", best);
     if (now - st.lastWriteAt < WRITE_INTERVAL_MS) return set(this.status.message, this.status.level, best);
 
-    const stepDb = Math.sign(error) * Math.min(Math.abs(error) * 0.5, this.config.speed * Math.max(dt, (now - st.lastWriteAt) / 1000));
+    // At most `speed` dB per second – also after a pause (no sudden jumps when speech resumes).
+    const stepDb = Math.sign(error) * Math.min(Math.abs(error) * 0.5, this.config.speed * Math.min(1, Math.max(dt, (now - st.lastWriteAt) / 1000)));
     const limited = this.move(best, st, Math.round(stepDb * 100), false);
     if (limited) return set(`${name}: Grenze erreicht (${error > 0 ? `Fader nie über ${dbText(this.config.ceiling * 100)}` : `Fader nie unter ${dbText(this.config.minLevel * 100)}`}).`, "warn", best);
     return set(`${name}: ${error > 0 ? "zu leise – ziehe hoch" : "zu laut – nehme zurück"} (${error > 0 ? "+" : ""}${error.toFixed(1)} dB)`, "ok", best);
@@ -379,14 +391,8 @@ export class AutoLevel {
    * The loudest speaking mic, measured against its *own* noise floor (so a sensitive pulpit mic
    * with high gain is not outvoted by a mic that merely picks up the same voice). The current
    * speaker keeps the role until another mic is clearly louder.
-   * Without meters: the only open selected mic.
    */
-  private detectSpeaker(now: number, metersAvailable: boolean): ChannelId | null {
-    if (!metersAvailable) {
-      this.bestKey = null;
-      const open = this.config.channels.filter((c) => this.isOpen(c));
-      return open.length === 1 ? open[0] : null;
-    }
+  private detectSpeaker(now: number): ChannelId | null {
     const levels = this.config.channels.map((c) => ({ c, ...this.meterLevel(c, now) }));
     for (const m of levels) {
       const st = this.state(m.c);

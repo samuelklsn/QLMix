@@ -71,6 +71,16 @@ final class SimulatedConsole: @unchecked Sendable {
 
     private func key(_ address: String, _ x: Int, _ y: Int) -> String { "\(address) \(x) \(y)" }
 
+    /// Fader of input channel `ch` in dB if it is ON and not at −∞ (thread-safe; for the simulated room mic).
+    func inputFaderDB(_ ch: Int) -> Double? {
+        queue.sync {
+            let id = ChannelID(.input, 0)
+            let fader = values[key(ParameterKey.channel(id, .level).address, ch, 0)]?.intValue ?? FaderLevel.negativeInfinityRaw
+            let on = values[key(ParameterKey.channel(id, .on).address, ch, 0)]?.intValue ?? 1
+            return on == 1 ? FaderLevel(raw: fader).dB : nil
+        }
+    }
+
     private func seedDefaults() {
         let names = ["Kick", "Snare", "HiHat", "Tom 1", "Tom 2", "OH L", "OH R", "Bass",
                      "Git 1", "Git 2", "Keys L", "Keys R", "Vox 1", "Vox 2", "Vox 3", "Talk"]

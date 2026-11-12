@@ -7,8 +7,8 @@ des Pults; bedient wird **im Browser** auf jedem Handy, Tablet oder Computer.
 * Fader, ON, CUE für Eingänge, Stereo-Eingänge, Mix, Matrix, DCA und Summe
 * **Monitormixe** (Sends on Fader) – Musiker stellen ihren In-Ear-Mix selbst am Handy ein (`/?mix=3`)
 * **EQ und Hochpass** pro Kanal mit grafischer Kurve, Gain (Vorverstärker), Namen, Farben, Szenen, Meter
-* **Raum-Automatik** (Testphase): Das Handy misst in der Raummitte, QLMix erkennt das sprechende Mikro – seit 1.4
-  auch, wenn es aus ist –, schaltet es ein und regelt es so, dass jeder Redner gleich laut im Raum ankommt
+* **Raum-Automatik** (Testphase): Die Raum-Mikros am Pult messen, wie laut es ankommt. QLMix erkennt das sprechende Mikro
+  – auch wenn es aus ist –, schaltet es ein und regelt es so, dass jeder Redner gleich laut im Raum ankommt
 * **Dynamics** (Gate/Kompressor …) und **Premium Rack** (Portico, Dynamic EQ …) – *in Vorbereitung, Abgleich am Pult folgt*
 * läuft als App auf dem Home-Bildschirm (iPhone/iPad), optional mit PIN
 * **Neues Design in 1.2**: klarer, besser lesbar und auf Handy, Tablet und Computer gleich aufgeräumt
@@ -16,6 +16,7 @@ des Pults; bedient wird **im Browser** auf jedem Handy, Tablet oder Computer.
   Pegelanzeige für alle Eingangskanäle mit Spitzenwert; Doppeltippen auf einen Fader = 0 dB, langsames Ziehen = fein
 * **Neu in 1.4**: Raum-Automatik öffnet ausgeschaltete Mikros selbst, merkt sich pro Mikro die passende Faderstellung
   und schließt Mikros nach einer Pause wieder
+* **Neu in 1.5**: Raum-Automatik misst über die Raum-Mikros am Pult statt über ein Handy
 
 <p align="center"><img src="docs/img/web/mixer-desktop.png" width="820" alt="QLMix im Browser: Kanalzüge und daneben der Kanal-Bereich mit Pegel, Fader und EQ"></p>
 
@@ -122,48 +123,47 @@ Weitere Details zur Web-Version (Bedienung, Musiker-Links, PIN, Mac/Linux): **[w
 
 ## Raum-Automatik (Testphase)
 
-Ein Handy liegt in der Mitte des Raums und misst, wie laut die Sprache ankommt. Für alle Sprecher-Mikros gilt **eine**
-Ziel-Lautstärke. So arbeitet die Automatik (ab Version 1.4):
+Die Raum-Mikrofone, die im Raum hängen und am Pult angeschlossen sind, messen, wie laut die Sprache ankommt.
+Für alle Sprecher-Mikros gilt **eine** Ziel-Lautstärke. So arbeitet die Automatik (ab Version 1.5):
 
 1. **Wer spricht?** QLMix sieht am Pult-Pegel (vor EQ, ON und Fader), in welches Mikro gerade gesprochen wird –
    auch wenn der Kanal aus ist oder der Fader ganz unten steht.
 2. **Mikro öffnen:** Spricht jemand eine halbe Sekunde lang deutlich hinein, schaltet QLMix den Kanal ein und zieht
    den Fader auf die Stellung, bei der dieses Mikro zuletzt gepasst hat (beim allerersten Mal auf −10 dB).
-3. **Feinregeln:** Danach zieht QLMix den Fader nach der Messung des Handys, bis die Ziel-Lautstärke erreicht ist,
-   und merkt sich diese Stellung fürs nächste Mal.
+3. **Nachregeln:** Danach zieht QLMix den Fader nach dem Pegel der Raum-Mikros, bis die Ziel-Lautstärke erreicht ist.
+   Spricht jemand lauter oder leiser, zieht der Fader nach. Die passende Stellung merkt sich QLMix fürs nächste Mal.
 4. **Wieder schließen:** Ist in ein Mikro, das QLMix selbst geöffnet hat, 30 Sekunden lang niemand mehr hineingesprochen,
    stellt QLMix es wieder so wie vorher (Fader zurück, Kanal aus). Mikros, die du selbst offen hattest, bleiben offen.
 
-### Einmalig: Handy für die Messung freischalten (iPhone)
-
-Browser erlauben das Mikrofon nur über eine sichere Verbindung (HTTPS). QLMix bringt dafür ein eigenes Zertifikat mit:
-
-1. Auf dem iPhone in **Safari** öffnen: `http://<IP-des-PCs>:8080/qlmix-ca.crt` → **Erlauben** → „Profil geladen“.
-2. **Einstellungen → Allgemein → VPN und Geräteverwaltung → „QLMix Local CA“ → Installieren.**
-3. **Einstellungen → Allgemein → Info → Zertifikatsvertrauenseinstellungen → „QLMix Local CA“ einschalten.**
-4. Ab jetzt QLMix über **`https://<IP-des-PCs>:8443`** öffnen (z. B. `https://192.168.1.50:8443`).
-
-(Der Link zum Zertifikat und zur sicheren Adresse steht auch direkt in QLMix unter **Auto**.)
+Ein Handy wird dafür nicht mehr gebraucht (bis Version 1.4 hat ein Handy in der Raummitte gemessen).
 
 ### Benutzung
 
 1. Oben auf **Auto** tippen.
-2. **Sprecher-Mikrofone** auswählen (Kanzel, Rednerpult, Funkmikros – keine Instrumente).
-3. Handy in die **Mitte des Raums** legen → **„Dieses Handy misst den Raum“** (Mikrofon erlauben, Bildschirm anlassen).
-4. Während jemand **normal spricht** und es gut klingt: **„So soll es klingen“**.
+2. Unter **1 Raum-Mikrofone** die Kanäle der Mikros antippen, die im Raum hängen (eins oder mehrere – sie werden gemittelt).
+   Ihr Kanal darf aus sein und der Fader unten, gemessen wird vor EQ und Fader.
+3. Während jemand **normal spricht** und es gut klingt: **„So soll es klingen“**. Das ist die Ziel-Lautstärke.
+4. Unter **3 Sprecher-Mikrofone** Kanzel, Rednerpult, Funkmikros antippen – keine Instrumente oder Gesang.
 5. **Automatik starten.** Mit dem Regler **leiser/lauter** die Ziel-Lautstärke jederzeit anpassen.
+
+Alleine testen: In das ausgeschaltete Sprecher-Mikro sprechen. Es geht auf, und unter „Raum-Mikrofone“ siehst du
+„Sprache“ und „Ziel“ nebeneinander; der Fader zieht nach, bis beide gleich sind. Lauter oder leiser sprechen →
+der Fader folgt nach ein bis zwei Sekunden.
+
+**Wichtig:** Wird der **Gain der Raum-Mikros** am Pult geändert, „So soll es klingen“ neu drücken.
 
 Unter **Regeln** lassen sich einstellen: Faderstellung beim ersten Öffnen, Fader nie unter / nie über
 (Standard −20 dB / +5 dB), wann wieder geschlossen wird (15 s – 2 min) und das Tempo.
 
 **Sicherheit:**
-* Die Automatik schaltet und bewegt nur die ausgewählten Kanäle.
+* Die Automatik schaltet und bewegt nur die ausgewählten Sprecher-Mikros, nie die Raum-Mikros.
 * Ein Mikro wird nur geöffnet, wenn es deutlich lauter ist als alle anderen. Ein Mikro, das den Redner nur von
   weitem mithört, bleibt zu.
 * Fader, die jemand von Hand bewegt, bleiben 20 Sekunden in Ruhe; die neue Stellung wird gemerkt.
 * Schaltest du ein Mikro aus, während jemand hineinspricht, bleibt es aus, bis 10 Sekunden niemand mehr hineinspricht.
-* Bei Rückkopplung wird sofort um 3 dB abgesenkt, und kurz wird nichts angehoben oder geöffnet.
-* Fällt die Messung vom Handy aus, werden Mikros weiter geöffnet und geschlossen, aber nicht feingeregelt.
+* Ist der Raum eine Sekunde lang ohne Pause viel lauter als das Ziel (Rückkopplung), wird sofort um 3 dB abgesenkt,
+  und kurz wird nichts angehoben oder geöffnet.
+* Ohne Pegel vom Pult (z. B. QL Editor läuft auf demselben PC) wartet die Automatik und bewegt nichts.
 * Bei Musik die Automatik ausschalten. **Vor dem ersten Einsatz im Gottesdienst in Ruhe testen.**
 
 ## Weitere Teile dieses Projekts

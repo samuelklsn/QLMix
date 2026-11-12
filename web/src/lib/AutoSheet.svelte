@@ -1,7 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
   import { type ChannelId, channelLabel, channelParamKey, channelsOf } from "../../shared/rcp.ts";
-  import { RoomMeter } from "./room-meter.ts";
   import { store } from "./store.svelte.ts";
   import Sheet from "./Sheet.svelte";
   import Icon from "./Icon.svelte";
@@ -14,49 +12,23 @@
   const model = $derived(store.model);
   const inputs = $derived(model ? [...channelsOf(model, "input"), ...channelsOf(model, "stereoInput")] : []);
 
-  // ------------------------------------------------------------ measuring on this device
-  let meter: RoomMeter | null = null;
-  let measuringHere = $state(false);
-  let measureError = $state<string | null>(null);
-  let localLevel = $state<number | null>(null);
-  let ports = $state({ httpPort: Number(location.port || 80), httpsPort: 8443 as number | null });
-
-  fetch("/api/endpoints").then((r) => r.json()).then((p) => (ports = p)).catch(() => {});
-
-  async function toggleMeasure() {
-    measureError = null;
-    if (measuringHere) {
-      meter?.stop();
-      meter = null;
-      measuringHere = false;
-      return;
-    }
-    try {
-      meter = new RoomMeter();
-      await meter.start((s) => {
-        localLevel = s.level;
-        store.sendRoom(s.level, s.feedback);
-      });
-      measuringHere = true;
-    } catch (e) {
-      meter = null;
-      measureError = e instanceof Error && e.name === "NotAllowedError"
-        ? "Mikrofon-Zugriff wurde nicht erlaubt (Einstellungen → Safari → Mikrofon)."
-        : `Mikrofon konnte nicht gestartet werden: ${e instanceof Error ? e.message : e}`;
-    }
-  }
-  onDestroy(() => meter?.stop());
-
-  const host = location.hostname;
-  const httpsUrl = $derived(ports.httpsPort ? `https://${host}:${ports.httpsPort}${location.pathname}` : null);
-  const certUrl = $derived(`http://${host}:${ports.httpPort}/qlmix-ca.crt`);
-
   // ------------------------------------------------------------ helpers
-  const selected = (c: ChannelId) => !!cfg?.channels.some((x) => x.kind === c.kind && x.index === c.index);
+  const same = (a: ChannelId) => (b: ChannelId) => a.kind === b.kind && a.index === b.index;
+  const selected = (c: ChannelId) => !!cfg?.channels.some(same(c));
+  const isRoom = (c: ChannelId) => !!cfg?.roomMics.some(same(c));
+  /** A channel is either a speaker mic or a room mic – choosing one role removes the other (server side). */
   function toggleChannel(c: ChannelId) {
     if (!cfg) return;
-    const channels = selected(c) ? cfg.channels.filter((x) => !(x.kind === c.kind && x.index === c.index)) : [...cfg.channels, c];
-    store.autoAction("config", { channels });
+    store.autoAction("config", { channels: selected(c) ? cfg.channels.filter((x) => !same(c)(x)) : [...cfg.channels, c] });
+  }
+  // Channel lists show only the chosen channels until "Ändern" is tapped (72 inputs are a long list on a phone).
+  let editRoom = $state(false);
+  let editSpeakers = $state(false);
+  const roomList = $derived(editRoom || !cfg?.roomMics.length ? inputs : inputs.filter(isRoom));
+  const speakerList = $derived(editSpeakers || !cfg?.channels.length ? inputs : inputs.filter(selected));
+  function toggleRoom(c: ChannelId) {
+    if (!cfg) return;
+    store.autoAction("config", { roomMics: isRoom(c) ? cfg.roomMics.filter((x) => !same(c)(x)) : [...cfg.roomMics, c] });
   }
   const name = (c: ChannelId) => {
     const v = store.get(channelParamKey(c, "name"));
@@ -72,9 +44,10 @@
   const missing = $derived.by(() => {
     const out: string[] = [];
     if (!cfg) return out;
-    if (!cfg.channels.length) out.push("Unter 3 die Sprecher-Mikrofone antippen.");
-    if (!st?.room.fresh) out.push("Unter 1 die Messung starten (Handy in der Raummitte).");
+    if (!cfg.roomMics.length) out.push("Unter 1 die Raum-Mikrofone antippen.");
+    else if (!st?.room.fresh) out.push("Von den Raum-Mikros kommt kein Pegel – ist QLMix mit dem Pult verbunden?");
     if (cfg.reference === null) out.push("Unter 2 „So soll es klingen“ drücken, während jemand normal spricht.");
+    if (!cfg.channels.length) out.push("Unter 3 die Sprecher-Mikrofone antippen.");
     return out;
   });
 </script>
@@ -91,7 +64,7 @@
           <b class="t-headline">{st.message}</b>
           <span class="t-footnote">
             {st.active ? `Aktives Mikro: ${st.active}` : "Kein aktives Mikro"} ·
-            {st.metersAvailable ? "erkannt über Pult-Pegel" : "Erkennung: einziges offenes Mikro"}
+            {st.metersAvailable ? "erkannt über Pult-Pegel" : "keine Pult-Pegel"}
           </span>
           {#if st.event}<span class="event t-footnote"><Icon name="check" size={13} /> {st.event}</span>{/if}
         </div>
@@ -136,48 +109,42 @@
             </div>
           {/each}
         </div>
-        <p class="hint t-footnote">{st.metersAvailable ? "Pegel am Pult vor EQ und ON – so wird Sprache auch bei ausgeschaltetem Kanal erkannt. Der Strich ist die Schwelle." : "Ohne Pult-Pegel zählt nur das einzige offene Mikro, und es wird keins automatisch geöffnet."}</p>
+        <p class="hint t-footnote">Pegel am Pult vor EQ und ON – so wird Sprache auch bei ausgeschaltetem Kanal erkannt. Der Strich ist die Schwelle.</p>
       </section>
     {/if}
 
-    <!-- 1 Measurement -->
+    <!-- 1 Room mics -->
     <section>
-      <h3 class="step"><span class="stepn">1</span>Messung in der Raummitte</h3>
-      <div class="group">
-        {#if !RoomMeter.supported}
-          <p class="t-callout"><b>Für das Mikrofon braucht dieses Gerät die sichere Verbindung.</b> Einmalig einrichten:</p>
-          <ol class="steps">
-            <li><a href={certUrl}>QLMix-Zertifikat laden</a> und „Erlauben“ tippen.</li>
-            <li>Einstellungen → Allgemein → <i>VPN und Geräteverwaltung</i> → „QLMix Local CA“ → Installieren.</li>
-            <li>Einstellungen → Allgemein → Info → <i>Zertifikatsvertrauenseinstellungen</i> → „QLMix Local CA“ einschalten.</li>
-            <li>Dann diese Seite sicher öffnen.</li>
-          </ol>
-          {#if httpsUrl}<a class="pill primary wide" href={httpsUrl}><Icon name="lock" size={16} /> Sicher öffnen</a>{/if}
-        {:else}
-          <button class="pill wide" class:lit={measuringHere} aria-pressed={measuringHere} onclick={toggleMeasure}>
-            {measuringHere ? "Dieses Handy misst – tippen zum Beenden" : "Mit diesem Handy messen"}
+      <h3 class="step"><span class="stepn">1</span>Raum-Mikrofone
+        {#if cfg.roomMics.length}<button class="pill edit" onclick={() => (editRoom = !editRoom)}>{editRoom ? "Fertig" : "Ändern"}</button>{/if}
+      </h3>
+      <div class="chgrid">
+        {#each roomList as c}
+          {@const room = isRoom(c)}
+          <button class="ch" class:sel={room} aria-pressed={room} onclick={() => toggleRoom(c)}>
+            <span class="n">{channelLabel(c)}</span>
+            <b>{name(c)}</b>
+            {#if selected(c)}<span class="corr">Sprecher</span>{/if}
           </button>
-          {#if measureError}<p class="err" role="alert">{measureError}</p>{/if}
-        {/if}
-
+        {/each}
+      </div>
+      <div class="group roomlevel">
         <div class="meter" aria-hidden="true">
-          <div class="bar" style="width: {pct(st.room.level ?? localLevel)}%"></div>
+          <div class="bar" style="width: {pct(st.room.level)}%"></div>
           {#if st.room.floor !== null}<div class="mark floor" style="left: {pct(st.room.floor)}%"></div>{/if}
           {#if st.room.speech !== null}<div class="mark speech" style="left: {pct(st.room.speech)}%"></div>{/if}
           {#if st.room.target !== null}<div class="mark target" style="left: {pct(st.room.target)}%"></div>{/if}
         </div>
         <dl class="legend num">
-          <div><dt>Jetzt</dt><dd>{fmt(st.room.level ?? localLevel)}</dd></div>
+          <div><dt>Jetzt</dt><dd>{fmt(st.room.level)}</dd></div>
           <div><dt><i class="k speech"></i>Sprache</dt><dd>{fmt(st.room.speech)}</dd></div>
           <div><dt><i class="k target"></i>Ziel</dt><dd>{fmt(st.room.target)}</dd></div>
           <div><dt><i class="k floor"></i>Ruhe</dt><dd>{fmt(st.room.floor)}</dd></div>
         </dl>
-        {#if st.feedback}<p class="err" role="alert"><Icon name="warning" size={15} /> Rückkopplung erkannt</p>{/if}
+        {#if st.feedback}<p class="err" role="alert"><Icon name="warning" size={15} /> Raum plötzlich viel zu laut – Pegel reduziert</p>{/if}
       </div>
-      <p class="hint t-footnote">
-        {#if auto.measuring && !measuringHere}Ein anderes Gerät misst gerade. {/if}
-        Handy in die Mitte des Raums legen, Bildschirm an und QLMix im Vordergrund lassen.
-      </p>
+      <p class="hint t-footnote">Die Mikros, die im Raum hängen, messen, wie laut es ankommt. Ihr Kanal darf aus sein und der Fader unten –
+        gemessen wird vor EQ und Fader. Mehrere werden gemittelt.</p>
     </section>
 
     <!-- 2 Target -->
@@ -193,21 +160,24 @@
             onchange={(e) => store.autoAction("config", { offset: Number(e.currentTarget.value) })} />
         </div>
       </div>
-      <p class="hint t-footnote">Drücken, während eine Person normal spricht und es im Raum gut klingt – das wird das Ziel.
-        {#if cfg.reference !== null}Aktuell {cfg.reference.toFixed(1)} dB.{/if}</p>
+      <p class="hint t-footnote">Drücken, während eine Person normal spricht und es im Raum gut klingt – das wird das Ziel für alle Sprecher-Mikros.
+        {#if cfg.reference !== null}Aktuell {cfg.reference.toFixed(1)} dB.{/if} Nach einer Gain-Änderung an den Raum-Mikros bitte neu festlegen.</p>
     </section>
 
     <!-- 3 Channels -->
     <section>
-      <h3 class="step"><span class="stepn">3</span>Sprecher-Mikrofone</h3>
+      <h3 class="step"><span class="stepn">3</span>Sprecher-Mikrofone
+        {#if cfg.channels.length}<button class="pill edit" onclick={() => (editSpeakers = !editSpeakers)}>{editSpeakers ? "Fertig" : "Ändern"}</button>{/if}
+      </h3>
       <div class="chgrid">
-        {#each inputs as c}
+        {#each speakerList as c}
           {@const sel = selected(c)}
           {@const learned = cfg.learned[`${c.kind}:${c.index}`]}
           <button class="ch" class:sel class:active={st.activeKey === `${c.kind}:${c.index}`} aria-pressed={sel} onclick={() => toggleChannel(c)}>
             <span class="n">{channelLabel(c)}</span>
             <b>{name(c)}</b>
             {#if sel && learned !== undefined}<span class="corr num">gemerkt {dbText(learned / 100)}</span>{/if}
+            {#if isRoom(c)}<span class="corr">Raum</span>{/if}
           </button>
         {/each}
       </div>
@@ -254,9 +224,9 @@
     </section>
 
     <p class="t-footnote">Spricht jemand deutlich in ein ausgewähltes Mikro, schaltet die Automatik es ein und zieht den Fader auf die gemerkte Stellung.
-      Danach regelt sie nach der Messung in der Raummitte. Mikros, die sie selbst geöffnet hat, stellt sie nach der Stille wieder so wie vorher.
+      Danach regelt sie nach dem Pegel der Raum-Mikros. Mikros, die sie selbst geöffnet hat, stellt sie nach der Stille wieder so wie vorher.
       Fader, die du selbst bewegst, lässt sie 20 Sekunden in Ruhe. Schaltest du ein Mikro aus, während jemand hineinspricht, bleibt es aus.
-      Bei Rückkopplung wird sofort um 3 dB abgesenkt. Bei Musik bitte ausschalten.</p>
+      Ist der Raum plötzlich viel zu laut (Rückkopplung), wird sofort um 3 dB abgesenkt. Bei Musik bitte ausschalten.</p>
   {/if}
 </Sheet>
 
@@ -291,7 +261,6 @@
     font-size: var(--fs-caption); font-weight: 700;
   }
 
-  .steps { margin: 0; padding-left: 20px; font-size: var(--fs-callout); line-height: 22px; display: flex; flex-direction: column; gap: var(--s1); }
 
   .meter { position: relative; height: 12px; border-radius: 6px; background: var(--sunken); overflow: hidden; margin-top: var(--s1); }
   .bar { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #248a3d, var(--on)); transition: width 0.15s linear; }
@@ -300,6 +269,7 @@
   .mark.speech, .k.speech { background: var(--info); }
   .mark.target, .k.target { background: var(--label); }
   .mark.target { width: 3px; }
+  .roomlevel { margin-top: var(--s3); }
   .legend { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--s2); margin: 0; }
   .legend div { display: flex; flex-direction: column; gap: 2px; }
   .legend dt { display: flex; align-items: center; gap: 6px; font-size: var(--fs-caption); color: var(--label-2); }
@@ -310,6 +280,7 @@
   .lbl { display: flex; justify-content: space-between; font-size: var(--fs-footnote); color: var(--label-2); }
   .lbl b { color: var(--label); font-weight: 600; }
 
+  .step .edit { margin-left: auto; }
   .chgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: var(--s2); }
   .ch {
     display: flex; flex-direction: column; align-items: flex-start; gap: 2px;

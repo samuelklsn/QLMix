@@ -6,6 +6,7 @@ import YamahaQLProtocol
 var options = SimulatedConsole.Options()
 var sysexPort: UInt16 = 50000
 var talkerChannel = 0
+var roomChannel: Int?
 var args = CommandLine.arguments.dropFirst()
 while let arg = args.popFirst() {
     switch arg {
@@ -19,6 +20,8 @@ while let arg = args.popFirst() {
         if let v = args.popFirst() { options.firmware = v }
     case "--talker":
         if let v = args.popFirst(), let n = Int(v) { talkerChannel = max(0, n - 1) }
+    case "--room":
+        if let v = args.popFirst(), let n = Int(v) { roomChannel = max(0, n - 1) }
     case "--sysex-port":
         if let v = args.popFirst(), let p = UInt16(v) { sysexPort = p }
     case "--no-eq":
@@ -33,6 +36,7 @@ while let arg = args.popFirst() {
           --animate         bewegt zufällig Fader (simuliert zweiten Bediener)
           --firmware <text> Antwort auf "devinfo version"
           --talker <n>      Kanal, der in den simulierten Eingangspegeln "spricht" (Standard 1)
+          --room <n>        Kanal eines simulierten Raum-Mikros (hört den Sprecher über die Anlage)
           --sysex-port <n>  Editor-Protokoll (SysEx) für EQ/Dynamics/Rack (Standard 50000, 0 = aus)
           --no-eq           EQ-Adressen nicht beantworten (wie ein Pult ohne EQ über RCP)
           --verbose         protokolliert jede Zeile
@@ -47,6 +51,8 @@ while let arg = args.popFirst() {
 let console = SimulatedConsole(options: options)
 let sysex = SysExConsole(port: sysexPort, inputs: options.model.count(.input), verbose: options.verbose)
 sysex.talker = talkerChannel
+sysex.room = roomChannel
+sysex.talkerFaderDB = { console.inputFaderDB($0) }
 do {
     try console.start()
     if sysexPort > 0 { try sysex.start() }

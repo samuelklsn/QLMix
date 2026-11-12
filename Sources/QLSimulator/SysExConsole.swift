@@ -14,6 +14,10 @@ final class SysExConsole: @unchecked Sendable {
     private let verbose: Bool
     /// Channel (0-based) that "talks" in the simulated input meters.
     var talker = 0
+    /// Channel (0-based) of a simulated room mic: hears the talker through the PA (talker fader + ON).
+    var room: Int?
+    /// Talker fader in dB if ON (nil = not audible through the PA).
+    var talkerFaderDB: ((Int) -> Double?)?
     private var meterTimers: [ObjectIdentifier: DispatchSourceTimer] = [:]
     private var meterUntil: [ObjectIdentifier: Date] = [:]
 
@@ -99,14 +103,28 @@ final class SysExConsole: @unchecked Sendable {
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now(), repeating: .milliseconds(100))
         timer.setEventHandler { [weak self, weak c] in
-            guard let self, let c else { timer.cancel(); return }
+            guard let self else { timer.cancel(); return }
+            // Connection gone: forget the timer, otherwise a new connection with the same id never gets meters.
+            guard let c else { timer.cancel(); self.meterTimers[id] = nil; return }
             if (self.meterUntil[id] ?? .distantPast) < Date() { timer.cancel(); self.meterTimers[id] = nil; return }
             let t = Date().timeIntervalSinceReferenceDate
             let talking = sin(t * 1.3) > -0.4   // speech with pauses
+            // Room mic: direct voice (−60 dBFS) plus the PA (−40 dBFS + talker fader).
+            var roomLevel: Double = 46 + Double.random(in: 0...2)
+            if self.room != nil, talking {
+                var power: Double = pow(10.0, -6.0)
+                if let dB = self.talkerFaderDB?(self.talker) {
+                    let pa: Double = -40.0 + dB + 4.0 * sin(t * 7.0)
+                    power += pow(10.0, pa / 10.0)
+                }
+                let jitter: Double = Double.random(in: -1...1)
+                roomLevel = 126.0 + 10.0 * log10(power) + jitter
+            }
             var data = [UInt8](repeating: 0, count: 880)
             for ch in 0..<88 {
                 var level: Double = ch < 64 ? 4 + Double.random(in: 0...2) : 0
                 if ch == self.talker, talking { level = 72 + 8 * sin(t * 7) + Double.random(in: -3...3) }
+                if ch == self.room { level = roomLevel }
                 for p in 0..<8 where p != 6 { data[ch * 10 + p] = UInt8(max(0, min(126, level))) }
                 data[ch * 10 + 8] = 126; data[ch * 10 + 9] = 126
             }

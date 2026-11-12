@@ -191,7 +191,6 @@ const auto = new AutoLevel({
   setOn: (c, on) => { for (const k of channelWriteKeys(c, "on")) { link.set(k, on ? 1 : 0); queueParam(k, on ? 1 : 0); } },
   label: (c) => { const n = link.values.get(channelParamKey(c, "name")); return typeof n === "string" && n ? n : channelLabel(c); },
 }, config.autolevel);
-let roomClient: Client | null = null;
 auto.onActiveChange = (label) => { if (auto.enabled) console.log(`[Auto] aktives Mikro: ${label ?? "keins"}`); };
 auto.onEvent = (text) => console.log(`[Auto] ${text}`);
 // Learned fader positions are saved a few seconds after they change (not on every tick).
@@ -210,7 +209,7 @@ ql.on("inmeters", (levels: Map<string, number>) => {
   pushMeters("stereoInput", stereo);
 });
 
-const autoState = () => ({ t: "auto", config: auto.config, status: auto.getStatus(), measuring: roomClient !== null });
+const autoState = () => ({ t: "auto", config: auto.config, status: auto.getStatus() });
 let lastAuto = "";
 setInterval(() => {
   auto.tick();
@@ -233,10 +232,18 @@ function handleAuto(client: Client, m: any) {
     case "config": {
       const c = m.config ?? {};
       const num = (v: unknown, lo: number, hi: number, d: number) => (typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
+      const inputs = (v: unknown): ChannelId[] => (Array.isArray(v) ? v : [])
+        .filter((x: any) => (x?.kind === "input" || x?.kind === "stereoInput") && Number.isInteger(x?.index))
+        .map((x: any) => ({ kind: x.kind, index: x.index }));
+      const same = (a: ChannelId) => (b: ChannelId) => a.kind === b.kind && a.index === b.index;
+      // A channel is either a speaker mic or a room mic – the newest choice wins.
+      if (Array.isArray(c.roomMics)) {
+        auto.config.roomMics = inputs(c.roomMics);
+        auto.config.channels = auto.config.channels.filter((x) => !auto.config.roomMics.some(same(x)));
+      }
       if (Array.isArray(c.channels)) {
-        auto.config.channels = c.channels
-          .filter((x: any) => (x?.kind === "input" || x?.kind === "stereoInput") && Number.isInteger(x?.index))
-          .map((x: any) => ({ kind: x.kind, index: x.index }));
+        auto.config.channels = inputs(c.channels);
+        auto.config.roomMics = auto.config.roomMics.filter((x) => !auto.config.channels.some(same(x)));
       }
       auto.config.offset = num(c.offset, -15, 15, auto.config.offset);
       auto.config.speed = num(c.speed, 0.2, 4, auto.config.speed);
@@ -287,12 +294,6 @@ wss.on("connection", (ws) => {
         updateWatched();
         break;
       }
-      case "room":
-        if (typeof m.level === "number") {
-          roomClient = client;
-          auto.addRoomSample(m.level, m.feedback === true);
-        }
-        break;
       case "auto": handleAuto(client, m); break;
       case "rackwatch":
         client.rackWatch = Number.isInteger(m.rack) ? m.rack : null;
@@ -314,7 +315,6 @@ wss.on("connection", (ws) => {
   });
   ws.on("close", () => {
     clients.delete(client);
-    if (roomClient === client) roomClient = null; // automatic holds by itself when samples stop
     updateWatched();
   });
 });
@@ -397,7 +397,7 @@ server.listen(config.httpPort, "0.0.0.0", () => {
   console.log(`  Auf diesem Mac:  http://localhost:${config.httpPort}`);
   for (const u of urls) console.log(`  Im Netzwerk:     ${u}`);
   if (config.pin) console.log(`  PIN:             ${config.pin}`);
-  if (secureServer) console.log(`  Mit Mikrofon (Raum-Automatik): https://<IP>:${config.httpsPort}  ·  Zertifikat: http://<IP>:${config.httpPort}/qlmix-ca.crt`);
+  if (secureServer) console.log(`  Sicher (HTTPS):  https://<IP>:${config.httpsPort}  ·  Zertifikat: http://<IP>:${config.httpPort}/qlmix-ca.crt`);
   console.log(`  Pult:            ${config.consoleHost}:${config.consolePort}\n`);
   if (urls[0]) {
     console.log("  Mit dem Handy scannen:\n");

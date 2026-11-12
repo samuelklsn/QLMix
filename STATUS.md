@@ -1,6 +1,6 @@
 # STATUS – QLMix
 
-Stand: 2026-11-12 · Version **1.4.0** gebaut, noch nicht veröffentlicht (letztes Release `v1.3.0`)
+Stand: 2026-11-12 · Version **1.5.0** veröffentlicht (Release `v1.5.0`)
 
 ## Fertig
 
@@ -40,7 +40,7 @@ Stand: 2026-11-12 · Version **1.4.0** gebaut, noch nicht veröffentlicht (letzt
 - Diagnose „Fader-Ebenen vom Pult lesen“ (Custom Fader Bank) in den Einstellungen.
 - README-Screenshots erneuert.
 
-**1.4.0 (gebaut, noch nicht veröffentlicht): Raum-Automatik öffnet Mikros selbst**
+**1.4.0: Raum-Automatik öffnet Mikros selbst**
 - Eine Ziel-Lautstärke für alle Sprecher-Mikros.
 - Spricht jemand deutlich (≥ 12 dB über dem eigenen Grundrauschen, 6 dB lauter als alle anderen, 0,5 s), wird der Kanal eingeschaltet und der Fader auf die gemerkte Stellung (sonst −10 dB) gezogen.
 - Gemerkte Faderstellung pro Mikro (`autolevel.learned` in `config.json`), aus „passt“-Momenten und Handgriffen.
@@ -50,12 +50,22 @@ Stand: 2026-11-12 · Version **1.4.0** gebaut, noch nicht veröffentlicht (letzt
 - Von Hand ausgeschaltet während jemand spricht → bleibt aus, bis 10 s Ruhe.
 - Im Simulator end-to-end geprüft (aus → ein, −∞ → −10 dB → Feinregeln, Stummschalten von Hand).
 
+**1.5.0: Raum-Mikros statt Handy**
+- Grund: Samuel testete 1.4 ohne Handy-Messung → Mikro ging auf −10 dB, aber nichts wurde nachgeregelt. Er will kein Handy, sondern die Raum-Mikros am Pult.
+- Raumpegel = Leistungsmittel der gewählten Raum-Mikros (`roomMics`), Meterpunkt 1 (vor EQ/Fader), raw − 126 = dBFS.
+- Handy-Messung komplett entfernt (`room-meter.ts`, WS `room`, Zertifikats-Anleitung).
+- Rückkopplungsschutz jetzt: Raum ≥ 1 s ohne Pause > Ziel + 10 dB → −3 dB.
+- Ohne Pult-Pegel wartet die Automatik (vorher: „einziges offenes Mikro“ geraten).
+- Fader bewegt sich höchstens `speed` dB/s, auch nach einer Pause.
+- Kanal-Listen zeigen nur gewählte Kanäle, „Ändern“ klappt alle 72 auf.
+- Simulator: `--room <n>` simuliert ein Raum-Mikro (hört den Sprecher über die Anlage); Fehler behoben, dass nach Server-Neustart keine Meter mehr kamen.
+
 **Sonstiges**
 - 15 Web-Tests grün, `svelte-check` 0 Fehler.
 
 ## In Arbeit
 
-- 1.4.0: Commit, Push und Release warten auf Samuels OK.
+- 1.5.0 auf dem Windows-PC einspielen, Raum-Mikros auswählen und am echten Pult testen.
 - Die Raum-Automatik ist in der **Testphase** (Badge „Test“ im UI). Der Nutzer testet sie im echten Raum.
 
 ## Nächste Schritte
@@ -65,7 +75,8 @@ Stand: 2026-11-12 · Version **1.4.0** gebaut, noch nicht veröffentlicht (letzt
 - **Samuel fragen, welche Funktionen ihm am meisten fehlen.** Vorschläge waren Mute-Gruppen, Pan, Sends eines Kanals auf alle Mixe, Szenen speichern. Er hat noch nicht geantwortet.
 
 - 1.2.0 auf dem Windows-PC einspielen (`update.cmd`) und am echten Pult und iPhone prüfen. Die Rückmeldung des Nutzers steht noch aus.
-- **Raum-Automatik (1.4) im echten Raum testen.**
+- **Raum-Automatik (1.5) im echten Raum testen.**
+  - Welche Kanäle sind die Raum-Mikros? Liefern sie genug Pegel (Sprache deutlich über Ruhe)?
   - Prüfen, ob ausgeschaltete Mikros zuverlässig geöffnet werden und nicht durch Übersprechen.
   - Schwellen ggf. anpassen (`OPEN_EXCESS`, `DOMINANCE`, `CONFIRM_MS` in `autolevel.ts`).
   - Prüfen, ob die Kanzel jetzt erkannt wird.
@@ -89,9 +100,8 @@ Stand: 2026-11-12 · Version **1.4.0** gebaut, noch nicht veröffentlicht (letzt
 - Die Diagnose fragt bis zu ca. 36 000 Adressen ab (im Simulator ca. 20 s). Am echten Pult ist noch nicht getestet, ob das die Verbindung kurz bremst.
 - Das Pult pusht EQ-Änderungen nicht. Der Server fragt ab, daher erscheinen Änderungen am Pult mit kurzer Verzögerung.
 - Die Dynamics-Anzeigen sind **ungefähr** (markiert mit „≈“). Die Regler funktionieren, die Einheiten können abweichen.
-- Raum-Automatik:
-  - Das Handy muss im Vordergrund bleiben und den Bildschirm anlassen.
-  - Fürs Mikrofon ist auf dem iPhone das QLMix-Zertifikat nötig (einmalige Einrichtung, siehe README).
+- Raum-Automatik: Die Raum-Mikros hören auch Musik und Applaus. Bei Musik muss die Automatik aus sein.
+  - Nach einer Gain-Änderung an den Raum-Mikros muss „So soll es klingen“ neu gesetzt werden.
 - `web/package-lock.json` führt noch Version `1.0.0` (nur kosmetisch). TODO: klären, ob mit `npm install` angleichen.
 - TODO: klären, ob die Mac-App (`Sources/QLMix`) weiter gepflegt oder als Legacy markiert werden soll.
 - TODO: klären, ob die alten Mac-Screenshots in `docs/img/*.png` noch gebraucht werden. Sie werden nur von der PDF-Anleitung und `build_guide.py` verwendet, das ist aber nicht geprüft.

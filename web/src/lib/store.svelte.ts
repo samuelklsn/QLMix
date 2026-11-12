@@ -30,6 +30,7 @@ export interface LogEntry { t: number; d: string; s: string }
 
 export interface AutoConfigState {
   channels: ChannelId[];
+  roomMics: ChannelId[];
   reference: number | null;
   offset: number;
   speed: number;
@@ -58,7 +59,6 @@ export interface AutoMic {
 
 export interface AutoState {
   config: AutoConfigState;
-  measuring: boolean;
   status: {
     enabled: boolean;
     message: string;
@@ -279,10 +279,6 @@ class Store {
     this.autoErrorAction = null;
     this.autoOk = null;
     this.sendRaw({ t: "auto", action, config });
-  }
-
-  sendRoom(level: number, feedback: boolean): void {
-    this.sendRaw({ t: "room", level, feedback });
   }
 
   setRawMode(on: boolean): void {
