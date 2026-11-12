@@ -193,9 +193,15 @@ const auto = new AutoLevel({
 }, config.autolevel);
 auto.onActiveChange = (label) => { if (auto.enabled) console.log(`[Auto] aktives Mikro: ${label ?? "keins"}`); };
 auto.onEvent = (text) => console.log(`[Auto] ${text}`);
-// Learned fader positions are saved a few seconds after they change (not on every tick).
+// Learned values are saved at most every 5 s – a throttle, not a debounce: during a long speech
+// they change every few seconds, and a debounce would never save.
 let learnSave: ReturnType<typeof setTimeout> | undefined;
-auto.onConfigChange = () => { clearTimeout(learnSave); learnSave = setTimeout(saveAuto, 5000); };
+auto.onConfigChange = () => { learnSave ??= setTimeout(() => { learnSave = undefined; saveAuto(); }, 5000); };
+// Unattended operation: if the automatic was on before a restart, it simply continues.
+if (auto.config.running) {
+  const err = auto.start();
+  console.log(err ? `[Auto] Automatik war an, startet aber nicht: ${err}` : "[Auto] Automatik war an – läuft weiter.");
+}
 ql.on("inmeters", (levels: Map<string, number>) => {
   auto.setMeters(levels);
   // RCP only meters MIX/MTX on CL/QL – input strips get the editor-protocol input meters (pre-EQ).
@@ -225,10 +231,11 @@ function saveAuto() {
 function handleAuto(client: Client, m: any) {
   let error: string | null = null;
   switch (m.action) {
-    case "start": error = auto.start(); if (!error) console.log("[Auto] Raum-Automatik gestartet"); break;
-    case "stop": auto.stop(); console.log("[Auto] Raum-Automatik gestoppt"); break;
+    case "start": error = auto.start(); saveAuto(); break;
+    case "stop": auto.stop(); saveAuto(); break;
+    case "panic": auto.panic(); saveAuto(); break;
     case "reference": error = auto.takeReference(); saveAuto(); break;
-    case "forget": auto.config.learned = {}; saveAuto(); break;
+    case "forget": auto.config.learned = {}; auto.config.profiles = {}; saveAuto(); break;
     case "forgetLimits": auto.config.limits = {}; saveAuto(); break;
     case "config": {
       const c = m.config ?? {};
@@ -252,6 +259,8 @@ function handleAuto(client: Client, m: any) {
       auto.config.minLevel = num(c.minLevel, -60, auto.config.ceiling, auto.config.minLevel);
       auto.config.startLevel = num(c.startLevel, -40, 10, auto.config.startLevel);
       auto.config.closeAfter = num(c.closeAfter, 5, 600, auto.config.closeAfter);
+      if (c.sensitivity === "low" || c.sensitivity === "normal" || c.sensitivity === "high") auto.config.sensitivity = c.sensitivity;
+      if (Array.isArray(c.musicIgnore)) auto.config.musicIgnore = inputs(c.musicIgnore);
       saveAuto();
       break;
     }

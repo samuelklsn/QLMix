@@ -40,6 +40,10 @@ export interface AutoConfigState {
   closeAfter: number;
   learned: Record<string, number>;
   limits: Record<string, number>;
+  sensitivity: "low" | "normal" | "high";
+  musicIgnore: ChannelId[];
+  profiles: Record<string, { speech: number; sum: number | null }>;
+  running: boolean;
 }
 
 export interface AutoMic {
@@ -55,6 +59,7 @@ export interface AutoMic {
   blocked: boolean;
   learned: number | null;
   limit: number | null;
+  speech: number | null;
   closesIn: number | null;
 }
 
@@ -70,7 +75,10 @@ export interface AutoState {
     room: { level: number | null; speech: number | null; floor: number | null; target: number | null; fresh: boolean };
     metersAvailable: boolean;
     feedback: boolean;
+    music: boolean;
+    musicSources: string[];
     mics: AutoMic[];
+    history: { t: number; text: string }[];
   };
 }
 
@@ -277,7 +285,7 @@ class Store {
     for (const p of params) this.write(eqWriteKeys(c, p, s), eqRaw(snapped, p, s), immediate);
   }
 
-  autoAction(action: "start" | "stop" | "reference" | "config" | "forget" | "forgetLimits", config?: Partial<AutoConfigState>): void {
+  autoAction(action: "start" | "stop" | "panic" | "reference" | "config" | "forget" | "forgetLimits", config?: Partial<AutoConfigState>): void {
     this.autoError = null;
     this.autoErrorAction = null;
     this.autoOk = null;
@@ -287,7 +295,7 @@ class Store {
       const c = { ...this.auto.config, ...(config ?? {}) };
       if (config?.roomMics) c.channels = c.channels.filter((x) => !c.roomMics.some(same(x)));
       if (config?.channels) c.roomMics = c.roomMics.filter((x) => !c.channels.some(same(x)));
-      if (action === "forget") c.learned = {};
+      if (action === "forget") { c.learned = {}; c.profiles = {}; }
       if (action === "forgetLimits") c.limits = {};
       this.auto = { ...this.auto, config: c };
       this.autoHoldUntil = performance.now() + 800;

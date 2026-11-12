@@ -19,6 +19,8 @@ des Pults; bedient wird **im Browser** auf jedem Handy, Tablet oder Computer.
 * **Neu in 1.5**: Raum-Automatik misst über die Raum-Mikros am Pult statt über ein Handy
 * **Neu in 1.6**: Raum-Automatik mit Pfeifschutz (merkt sich pro Mikro eine Pfeifgrenze), übernimmt beim Start alle
   Sprecher-Mikros, zieht stille Mikros runter und öffnet schneller
+* **Neu in 1.7**: Raum-Automatik läuft ohne Techniker: ein Knopf, bleibt nach Neustart an, erkennt Musik selbst,
+  öffnet nicht mehr bei Schritten oder Gemeindegesang, regelt ruhig statt ständig, Verlauf und Notaus für die Fernbedienung
 
 <p align="center"><img src="docs/img/web/mixer-desktop.png" width="820" alt="QLMix im Browser: Kanalzüge und daneben der Kanal-Bereich mit Pegel, Fader und EQ"></p>
 
@@ -125,53 +127,54 @@ Weitere Details zur Web-Version (Bedienung, Musiker-Links, PIN, Mac/Linux): **[w
 
 ## Raum-Automatik (Testphase)
 
-Die Raum-Mikrofone, die im Raum hängen und am Pult angeschlossen sind, messen, wie laut die Sprache ankommt.
-Für alle Sprecher-Mikros gilt **eine** Ziel-Lautstärke. So arbeitet die Automatik (ab Version 1.6):
+Die Raum-Automatik läuft **ohne Techniker**: einmal einrichten, dann ein Knopf. Sie entscheidet selbst, welches
+Sprecher-Mikro auf- und zugeht und wie laut es ist – auch wenn niemand am Pult steht (Bedienung von zu Hause über
+euer VPN). Für alle Sprecher-Mikros gilt **eine** Ziel-Lautstärke im Raum.
 
-1. **Wer spricht?** QLMix sieht am Pult-Pegel (vor EQ, ON und Fader), in welches Mikro gerade gesprochen wird –
-   auch wenn der Kanal aus ist oder der Fader ganz unten steht.
-2. **Mikro öffnen:** Spricht jemand deutlich hinein, schaltet QLMix den Kanal nach etwa einer Viertelsekunde ein und
-   zieht den Fader sofort auf die Stellung, bei der dieses Mikro zuletzt gepasst hat (beim allerersten Mal auf −10 dB).
-3. **Nachregeln:** Danach zieht QLMix den Fader nach dem Pegel der Raum-Mikros, bis die Ziel-Lautstärke erreicht ist.
-   Spricht jemand lauter oder leiser, zieht der Fader nach. Die passende Stellung merkt sich QLMix fürs nächste Mal.
-4. **Fader runter bei Stille:** Spricht in ein Sprecher-Mikro 30 Sekunden lang niemand (einstellbar 15 s – 2 min),
-   geht sein Fader ganz runter. Das gilt für alle ausgewählten Sprecher-Mikros, auch die, die du vorher selbst
-   aufgemacht hast. ON bleibt, wie es ist (wegen der Monitormixe).
-5. **Pfeifschutz:** Sprache hat immer kleine Pausen, Pfeifen nicht. Bleiben Raum-Mikro und Sprecher-Mikro etwa eine
-   Sekunde lang ohne Pause laut, nimmt QLMix dieses Mikro sofort 6 dB zurück und merkt sich 3 dB unter der Stelle, an
-   der es gepfiffen hat, eine **Pfeifgrenze**. Darüber geht der Fader nie wieder. Die Grenze steht beim Mikro und lässt
-   sich unter **Regeln → Pfeifgrenzen zurücksetzen** löschen.
-
-Ein Handy wird dafür nicht mehr gebraucht (bis Version 1.4 hat ein Handy in der Raummitte gemessen).
-
-### Benutzung
+### Einmal einrichten
 
 1. Oben auf **Auto** tippen.
-2. Unter **1 Raum-Mikrofone** die Kanäle der Mikros antippen, die im Raum hängen (eins oder mehrere – sie werden gemittelt).
-   Ihr Kanal darf aus sein und der Fader unten, gemessen wird vor EQ und Fader.
-3. Während jemand **normal spricht** und es gut klingt: **„So soll es klingen“**. Das ist die Ziel-Lautstärke.
-4. Unter **3 Sprecher-Mikrofone** Kanzel, Rednerpult, Funkmikros antippen – keine Instrumente oder Gesang.
-5. **Automatik starten.** Mit dem Regler **leiser/lauter** die Ziel-Lautstärke jederzeit anpassen.
+2. **1 Raum-Mikrofone:** die Kanäle der Mikros antippen, die im Raum hängen (eins oder mehrere). Ihr Kanal darf aus
+   sein und der Fader unten, gemessen wird vor EQ und Fader.
+3. **2 Ziel-Lautstärke:** Während jemand **normal spricht** und es gut klingt: **„So soll es klingen“**.
+4. **3 Sprecher-Mikrofone:** Kanzel, Rednerpult, Funkmikros – keine Instrumente oder Gesangsmikros.
+5. **Automatik starten.** Sie bleibt an, auch nach einem Neustart des PCs, bis jemand sie stoppt.
 
-Alleine testen: In das ausgeschaltete Sprecher-Mikro sprechen. Es geht auf, und unter „Raum-Mikrofone“ siehst du
-„Sprache“ und „Ziel“ nebeneinander; der Fader zieht nach, bis beide gleich sind. Lauter oder leiser sprechen →
-der Fader folgt nach ein bis zwei Sekunden.
+### So arbeitet sie (ab Version 1.7)
 
-**Wichtig:** Wird der **Gain der Raum-Mikros** am Pult geändert, „So soll es klingen“ neu drücken.
+* **Öffnen nur bei echter Sprache:** Ein Mikro geht erst auf, wenn etwa eine dreiviertel Sekunde lang direkt
+  hineingesprochen wird. QLMix lernt pro Mikro, wie laut man normal hineinspricht – Schritte, Vorbeilaufen, ein Stoß
+  ans Mikro oder die singende Gemeinde sind viel leiser und öffnen nichts. Die **Empfindlichkeit** (Niedrig / Normal /
+  Hoch) lässt sich unter „Regeln“ einstellen.
+* **Ruhig einstellen statt ständig regeln:** Bei einem neuen Sprecher zieht QLMix den Fader einmal auf die richtige
+  Stellung, danach bleibt er stehen. Nur wenn jemand länger deutlich (mehr als 3 dB) lauter oder leiser spricht,
+  gleicht QLMix langsam an. Gemessen wird dafür am Sprecher-Mikro selbst; die Raum-Mikros dienen nur zum Einmessen
+  auf die Ziel-Lautstärke und für den Pfeifschutz.
+* **Musik wird automatisch erkannt:** Haben andere Eingänge Signal (Klavier, Orgel, Band, Chor, Zuspieler), läuft
+  Musik. Dann öffnet QLMix nur ein Mikro, in das jemand direkt singt oder spricht, und regelt nichts nach. Ein Mikro,
+  in das gesprochen wird, das aber kein Sprecher-Mikro ist, unter **5 Musik-Erkennung** ausnehmen.
+* **Fader runter bei Stille:** Spricht in ein Sprecher-Mikro 30 Sekunden lang niemand (einstellbar 15 s – 2 min),
+  geht sein Fader ganz runter. ON bleibt, wie es ist (wegen der Monitormixe). Spricht wieder jemand hinein, springt
+  der Fader sofort auf die gemerkte Stellung.
+* **Pfeifschutz:** Bleiben Raum-Mikro und Sprecher-Mikro etwa eine Sekunde lang ohne Pause laut, nimmt QLMix das Mikro
+  sofort 6 dB zurück und merkt sich eine **Pfeifgrenze**, über die der Fader nicht mehr geht.
+* **Handgriffe:** Bewegst du einen Fader, während jemand spricht, übernimmt QLMix deine Stellung als richtig für dieses
+  Mikro und macht von dort aus weiter. Schaltest du ein Mikro aus, während jemand hineinspricht, bleibt es aus, bis
+  10 Sekunden niemand mehr hineinspricht.
 
-Unter **Regeln** lassen sich einstellen: Faderstellung beim ersten Öffnen, Fader nie unter / nie über
-(Standard −20 dB / +5 dB), nach wie viel Stille der Fader runtergeht (15 s – 2 min) und das Tempo.
+### Von zu Hause prüfen
 
-**Sicherheit:**
-* Die Automatik schaltet und bewegt nur die ausgewählten Sprecher-Mikros, nie die Raum-Mikros.
-* Ein Mikro wird nur geöffnet, wenn es deutlich lauter ist als alle anderen. Ein Mikro, das den Redner nur von
-  weitem mithört, bleibt zu.
-* Bewegst du einen Fader von Hand, merkt sich QLMix die Stellung und übernimmt nach 5 Sekunden wieder.
-* Schaltest du ein Mikro aus, während jemand hineinspricht, bleibt es aus, bis 10 Sekunden niemand mehr hineinspricht.
-* Nach Pfeifen wird 10 Sekunden lang nichts angehoben oder geöffnet.
-* Den EQ stellt QLMix nicht automatisch gegen Pfeifen ein: Das Pult liefert nur Pegel, keine Frequenzen.
+Oben im Auto-Fenster zeigen drei Punkte, ob **Pult**, **Pegel** und **Raum-Mikros** ankommen (grün = in Ordnung).
+Der **Verlauf** zeigt, was passiert ist, z. B. „10:02 Kanzel spricht – Fader auf −3 dB (gemerkt)“,
+„10:15 Musik erkannt (Klavier)“. Der Knopf **„Notaus: alle Sprecher-Mikros zu“** stoppt die Automatik und zieht alle
+Sprecher-Mikros zu. **Bitte eine PIN setzen**, wenn QLMix von außen erreichbar ist.
+
+**Gut zu wissen:**
+* Wird der Gain der Raum-Mikros geändert, „So soll es klingen“ neu drücken (QLMix misst dann alle Mikros neu ein).
+* „Gelerntes vergessen“ und „Pfeifgrenzen zurücksetzen“ unter „Regeln“ setzen das Gelernte zurück.
 * Ohne Pegel vom Pult (z. B. QL Editor läuft auf demselben PC) wartet die Automatik und bewegt nichts.
-* Bei Musik die Automatik ausschalten. **Vor dem ersten Einsatz im Gottesdienst in Ruhe testen.**
+* Den EQ stellt QLMix (noch) nicht automatisch gegen Pfeifen ein.
+* **Vor dem ersten Einsatz im Gottesdienst in Ruhe testen.**
 
 ## Weitere Teile dieses Projekts
 

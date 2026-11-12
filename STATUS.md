@@ -1,6 +1,6 @@
 # STATUS – QLMix
 
-Stand: 2026-11-12 · Version **1.6.0** veröffentlicht (Release `v1.6.0`)
+Stand: 2026-11-12 · Version **1.7.0** veröffentlicht (Release `v1.7.0`)
 
 ## Fertig
 
@@ -69,12 +69,21 @@ Stand: 2026-11-12 · Version **1.6.0** veröffentlicht (Release `v1.6.0`)
 - EQ automatisch gegen Pfeifen: nicht möglich, weil das Pult nur Pegel liefert (keine Frequenzen).
 - UI: Auswahl wirkt sofort (lokal, ohne auf den Server zu warten), Regler zeigen den Wert beim Ziehen, Pfeifgrenze an den Kacheln, „Pfeifgrenzen zurücksetzen“.
 
+**1.7.0: unbeaufsichtigter Betrieb**
+- Samuels Rückmeldung zu 1.6: zu empfindlich (Vorbeilaufen öffnet), Chor/Gemeindegesang darf nicht öffnen, ständiges Nachregeln klingt komisch. Muss ohne Techniker laufen (Fernbedienung über Samuels VPN – dafür nichts zu bauen).
+- Ein Knopf: `running` wird gespeichert, nach Server-Neustart läuft die Automatik weiter (im Simulator geprüft).
+- Pro Mikro gelernt (`profiles`): normaler Sprechpegel (dBFS) und Summe Mikropegel + Fader für die Ziel-Lautstärke. Erstes Einmessen über die Raum-Mikros, danach Regelung am Mikro selbst: neuer Sprecher → einmal einstellen (3 dB/s, 4 s), dann nur bei > 3 dB Abweichung über 10 s langsam (speed × 0,5 dB/s). Raum-Mikros ziehen die Summe nur nach, wenn der Fader ruht (0,15 dB/s). Handgriff setzt die Summe fest (`manual`).
+- Öffnen: Pegel nahe am gelernten Sprechpegel (Empfindlichkeit −8/−12/−16 dB; ohne Profil +24/+20/+16 dB über Rauschen), ≥ 50 % der Messwerte in 0,8 s, 1000/700/450 ms anhaltend. Schritte/Klopfen und Gemeindegesang öffnen nicht (Tests).
+- Musik: andere Eingänge ≥ 15 dB über eigenem Rauschen und ≥ −50 dBFS in ≥ 40 % von 3 s → Musik (4 s Nachlauf). Dann nur direkter Gesang öffnet, keine Regelung, Pfeifschutz erst ab Ziel + 10 dB.
+- Notaus, Verlauf (40 Einträge), Zustandsanzeige Pult/Pegel/Raum-Mikros.
+- Behoben: Gelerntes wurde bei durchgehender Rede nie gespeichert (Debounce) → jetzt höchstens alle 5 s gespeichert.
+
 **Sonstiges**
 - 15 Web-Tests grün, `svelte-check` 0 Fehler.
 
 ## In Arbeit
 
-- 1.6.0 auf dem Windows-PC einspielen und am echten Pult testen (Pfeifschutz, Fader runter nach Stille).
+- 1.7.0 auf dem Windows-PC einspielen und am echten Pult testen (Einlernen, Musik-Erkennung, Neustart).
 - Die Raum-Automatik ist in der **Testphase** (Badge „Test“ im UI). Der Nutzer testet sie im echten Raum.
 
 ## Nächste Schritte
@@ -84,7 +93,10 @@ Stand: 2026-11-12 · Version **1.6.0** veröffentlicht (Release `v1.6.0`)
 - **Samuel fragen, welche Funktionen ihm am meisten fehlen.** Vorschläge waren Mute-Gruppen, Pan, Sends eines Kanals auf alle Mixe, Szenen speichern. Er hat noch nicht geantwortet.
 
 - 1.2.0 auf dem Windows-PC einspielen (`update.cmd`) und am echten Pult und iPhone prüfen. Die Rückmeldung des Nutzers steht noch aus.
-- **Raum-Automatik (1.6) im echten Raum testen.**
+- **Raum-Automatik (1.7) im echten Raum testen.**
+  - Musik-Erkennung: Welche Kanäle zählen fälschlich als Musik (z. B. ein nicht ausgewähltes Sprechermikro)? → unter „Musik-Erkennung“ ausnehmen.
+  - Öffnet es zu spät/zu früh? Empfindlichkeit anpassen; Schwellen in `autolevel.ts` (`OPEN_BELOW_SPEECH`, `CONFIRM_MS`).
+- **Danach (1.8): EQ-Kerben gegen Pfeifen über Dante Virtual Soundcard** (Plan mit Samuel besprochen: ffmpeg liest DVS im WDM-Modus, FFT, Kerbe in freiem PEQ-Band). Samuel muss prüfen, ob DVS lizenziert und im WDM-Modus ist.
   - Löst der Pfeifschutz rechtzeitig aus? Löst er fälschlich aus (z. B. lang gezogene Vokale)? Dann `STEADY_DB`/`FEEDBACK_WINDOW_MS` anpassen.
   - Offene Frage: Display-Fehler, den Samuel gesehen hat, ist nicht genau bekannt (Screenshot erbeten).
   - Welche Kanäle sind die Raum-Mikros? Liefern sie genug Pegel (Sprache deutlich über Ruhe)?

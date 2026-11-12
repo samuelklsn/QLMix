@@ -20,11 +20,12 @@
     - Er regelt dessen Fader auf eine Ziel-Lautstärke.
     - Seit 1.4: schaltet ausgeschaltete Mikros selbst ein und merkt sich pro Mikro die Faderstellung (`learned`).
     - Seit 1.6: übernimmt beim Start alle Sprecher-Mikros, Fader nach `closeAfter` s Stille auf −∞ (ON bleibt), Pfeifschutz mit Grenze pro Mikro (`limits`), Handgriff = 5 s Pause.
+    - Seit 1.7: unbeaufsichtigter Betrieb. `running` bleibt über Neustarts an, Notaus (`panic`), Verlauf. Pro Mikro gelernt: Sprechpegel + „Summe“ (`profiles`: Mikropegel + Fader = Ziel); Regelung am Mikro selbst, einmal einstellen, dann nur > 3 dB langsam. Musik = andere Eingänge aktiv (`musicIgnore` ausnehmbar). Öffnen braucht anhaltende Sprache nahe dem gelernten Sprechpegel (`sensitivity`).
 - **Produktivbetrieb:** auf einem Windows-PC des Nutzers, Autostart beim Booten.
 - **Mac-App** (Swift, `Sources/QLMix`): der erste Prototyp. Sie kann kein EQ über RCP, weil das Pult EQ nicht über RCP anbietet.
   - TODO: klären, ob die Mac-App noch weiterentwickelt werden soll. Seit der Web-Version wurde sie nicht mehr angefasst.
 - **Repo:** https://github.com/samuelklsn/QLMix (öffentlich, Branch `main`)
-  - Aktuelle Version **1.6.0**, Releases als GitHub-Release mit Tag `vX.Y.Z`.
+  - Aktuelle Version **1.7.0**, Releases als GitHub-Release mit Tag `vX.Y.Z`.
 
 ## Tech-Stack
 

@@ -21,7 +21,7 @@ function church(start: { faders?: Record<string, number>; on?: Record<string, bo
     isOn: (c: ChannelId) => on[key(c)] ?? false,
     setFader: (c: ChannelId, raw: number) => { faders[key(c)] = raw; },
     setOn: (c: ChannelId, v: boolean) => { on[key(c)] = v; },
-    label: (c: ChannelId) => (c.index === 0 ? "Kanzel" : "Pult"),
+    label: (c: ChannelId) => (["Kanzel", "Pult", "Raum", "CH 4", "CH 5", "Klavier"][c.index] ?? `CH ${c.index + 1}`),
   };
   const al = new AutoLevel(io, {
     channels: [{ kind: "input", index: 0 }, { kind: "input", index: 1 }], roomMics: [{ kind: "input", index: 2 }], reference: -30,
@@ -31,6 +31,12 @@ function church(start: { faders?: Record<string, number>; on?: Record<string, bo
   let voice = 0;
   /** mic that feeds back: a steady tone on it and on the room mic */
   let feedback: string | null = null;
+  /** the congregation sings: every speaker mic hears it this much above its floor, the room is loud */
+  let crowd = 0;
+  /** an instrument (CH 6 "Klavier") plays */
+  let instrument = false;
+  /** footsteps near a mic: one short knock every half second */
+  let steps: string | null = null;
   /** Runs `seconds` in 100 ms steps: meters (incl. room mic) every step, controller every 2nd. */
   const run = (seconds: number) => {
     for (let i = 0; i < seconds * 10; i++) {
@@ -39,10 +45,14 @@ function church(start: { faders?: Record<string, number>; on?: Record<string, bo
       const meters = new Map<string, number>();
       for (const k of ["input:0", "input:1"]) {
         const noise = (k === "input:0" ? 50 : 20) + (i % 3);   // Kanzel has much more gain
-        meters.set(k, feedback === k ? noise + 35 + (i % 2) : talker === k && word ? noise + 30 + voice : talker && word ? noise + 4 : noise);
+        const base = feedback === k ? noise + 35 + (i % 2) : talker === k && word ? noise + 30 + voice : talker && word ? noise + 4 : noise;
+        const knock = steps === k && i % 5 === 0 ? noise + 30 : 0;
+        meters.set(k, Math.max(base, knock, crowd ? noise + crowd + (i % 4) : 0));
       }
+      meters.set("input:5", instrument ? 92 + (i % 5) : 30 + (i % 2));
       const audible = talker !== null && word && on[talker] && faders[talker] > NEG_INF;
-      const roomDb = feedback ? -10 + (i % 2) : audible ? voice + faders[talker!] / 100 - 30 + Math.sin(i) : -70 + Math.random();
+      const roomDb = feedback ? -10 + (i % 2) : audible ? voice + faders[talker!] / 100 - 30 + Math.sin(i)
+        : crowd || instrument ? -35 + (i % 6) : -70 + Math.random();
       meters.set("input:2", Math.round(roomDb + 126));
       al.setMeters(meters);
       if (i % 2 === 1) al.tick();
@@ -52,6 +62,9 @@ function church(start: { faders?: Record<string, number>; on?: Record<string, bo
     al, faders, on, run,
     talk: (k: string | null, v = 0) => { talker = k; voice = v; },
     setFeedback: (k: string | null) => { feedback = k; },
+    setCrowd: (db: number) => { crowd = db; },
+    setInstrument: (v: boolean) => { instrument = v; },
+    setSteps: (k: string | null) => { steps = k; },
     skip: (ms: number) => { now += ms; },
   };
 }
@@ -63,7 +76,7 @@ test("switches a closed mic on, pulls the fader up and regulates to the target",
   assert.equal(sim.on["input:0"], false);
 
   sim.talk("input:0", -6);                       // a quiet speaker at the pulpit
-  sim.run(1);
+  sim.run(1.5);                                  // sustained speech for a moment
   assert.equal(sim.on["input:0"], true, "Kanzel switched on");
   assert.equal(sim.faders["input:0"], -1000, "jumps to the start level (−10 dB)");
   assert.match(sim.al.getStatus().event ?? "", /Kanzel spricht – Fader auf −10 dB, eingeschaltet/);
@@ -98,8 +111,8 @@ test("pulls the fader down after the silence and opens again at once", () => {
   assert.equal(sim.faders["input:1"], NEG_INF, "fader down");
   assert.match(sim.al.getStatus().event ?? "", /Pult: 30 s still – Fader runter/);
   sim.talk("input:1");
-  sim.run(0.6);
-  assert.ok(sim.faders["input:1"] > NEG_INF, "back up within about half a second");
+  sim.run(1.5);
+  assert.ok(sim.faders["input:1"] > NEG_INF, "back up within about a second");
 });
 
 test("uses the learned position next time", () => {
@@ -108,7 +121,7 @@ test("uses the learned position next time", () => {
   sim.al.start();
   sim.run(25);
   sim.talk("input:0");
-  sim.run(1);
+  sim.run(1.5);
   assert.equal(sim.faders["input:0"], -350);
   assert.match(sim.al.getStatus().event ?? "", /gemerkt/);
 });
@@ -155,19 +168,23 @@ test("a mic switched off by hand while talking stays off until it was quiet", ()
   assert.equal(sim.on["input:0"], true, "opens again after 10 s of quiet");
 });
 
-test("a manual fader move pauses the channel and is remembered", () => {
+test("a manual fader move is learned, and the automatic keeps working from there", () => {
   const sim = church({ faders: { "input:0": 0 }, on: { "input:0": true } });
+  sim.al.config.ceiling = 10;
   sim.al.start();
   sim.run(25);
   sim.talk("input:0");
-  sim.run(5);
-  sim.faders["input:0"] = -800;                    // pulled down a bit by hand
+  sim.run(15);
+  sim.faders["input:0"] = -800;                    // the technician prefers it 8 dB lower
   sim.run(3);
   assert.equal(sim.faders["input:0"], -800);
   assert.match(sim.al.getStatus().message, /von Hand/);
   assert.equal(sim.al.config.learned["input:0"], -800);
   sim.run(8);
-  assert.notEqual(sim.faders["input:0"], -800, "takes over again after 5 s");
+  assert.ok(Math.abs(sim.faders["input:0"] + 800) <= 100, `keeps the chosen level ${sim.faders["input:0"]}`);
+  sim.talk("input:0", 6);                          // the speaker gets 6 dB louder
+  sim.run(25);
+  assert.ok(Math.abs(sim.faders["input:0"] + 1400) <= 150, `follows from the chosen level ${sim.faders["input:0"]}`);
 });
 
 test("console rounding is not taken for a manual move", () => {
@@ -240,7 +257,7 @@ test("opens without room level, but holds the fader", () => {
   }
   assert.equal(sim.on["input:0"], true);
   assert.equal(sim.faders["input:0"], -1000);
-  assert.match(sim.al.getStatus().message, /kein Pegel von den Raum-Mikros/);
+  assert.match(sim.al.getStatus().message, /warte auf Sprache an den Raum-Mikros/);
 });
 
 test("needs room mics, channels and a reference before starting", () => {
@@ -294,7 +311,7 @@ test("a long speech with few pauses keeps the mic open", () => {
   sim.al.start();
   sim.run(25);
   sim.talk("input:0");
-  sim.run(1);
+  sim.run(1.5);
   assert.equal(sim.on["input:0"], true);
   // 3 minutes of speech: the helper makes 20 % pauses; the mic must stay the speaker throughout.
   for (let i = 0; i < 18; i++) {
@@ -345,4 +362,84 @@ test("waits without console meters instead of guessing the speaker", () => {
   al.tick();
   assert.match(al.getStatus().message, /Keine Pegel vom Pult/);
   assert.equal(al.getStatus().active, null);
+});
+
+test("footsteps or a knock at a mic do not open it", () => {
+  const sim = church();
+  sim.al.start();
+  sim.run(25);
+  sim.setSteps("input:1");
+  sim.run(10);
+  assert.equal(sim.on["input:1"], false);
+  assert.equal(sim.faders["input:1"], NEG_INF);
+});
+
+test("the congregation singing does not open speaker mics", () => {
+  const sim = church();
+  sim.al.start();
+  sim.run(25);
+  sim.setCrowd(14);                                 // every speaker mic hears the room 14 dB above its floor
+  sim.run(20);
+  assert.equal(sim.on["input:0"], false);
+  assert.equal(sim.on["input:1"], false);
+});
+
+test("music: nothing opens for the room, only somebody singing right into a mic; faders hold", () => {
+  const sim = church({ faders: { "input:0": 0 }, on: { "input:0": true } });
+  sim.al.config.ceiling = 10;
+  sim.al.start();
+  sim.run(25);
+  sim.talk("input:0");
+  sim.run(15);                                      // speaking level of the pulpit is learned
+  sim.talk(null);
+  sim.setInstrument(true);
+  sim.run(5);
+  assert.equal(sim.al.getStatus().music, true);
+  assert.deepEqual(sim.al.getStatus().musicSources, ["Klavier"]);
+  assert.match(sim.al.getStatus().history.map((h) => h.text).join("|"), /Musik erkannt \(Klavier\)/);
+  const held = sim.faders["input:0"];
+  sim.talk("input:0", 3);                           // the pastor speaks over the piano
+  sim.run(8);
+  assert.equal(sim.faders["input:0"], held, "no regulation during music");
+  assert.match(sim.al.getStatus().message, /zur Musik – Fader bleibt stehen/);
+  sim.talk("input:1", -10);                         // somebody further away from the lectern mic
+  sim.run(5);
+  assert.equal(sim.on["input:1"], false, "not close enough to open during music");
+  sim.talk(null);
+  sim.setInstrument(false);
+  sim.run(6);
+  assert.equal(sim.al.getStatus().music, false);
+});
+
+test("holds the fader still while somebody speaks evenly", () => {
+  const sim = church({ faders: { "input:0": 0 }, on: { "input:0": true } });
+  sim.al.config.ceiling = 10;
+  sim.al.start();
+  sim.run(25);
+  sim.talk("input:0");
+  sim.run(15);
+  const writes: number[] = [];
+  const io = (sim.al as any).io;
+  const set = io.setFader;
+  io.setFader = (c: ChannelId, raw: number) => { writes.push(raw); set(c, raw); };
+  for (let k = 0; k < 6; k++) { sim.talk("input:0", k % 2 ? 2 : -2); sim.run(5); }   // ±2 dB natural variation
+  assert.equal(writes.length, 0, `no fader moves for small variations (${writes.join(", ")})`);
+});
+
+test("stays on across a restart and the emergency stop closes all speaker mics", () => {
+  const sim = church({ faders: { "input:0": 0, "input:1": -500 }, on: { "input:0": true, "input:1": true } });
+  let saved = 0;
+  sim.al.onConfigChange = () => { saved++; };
+  sim.al.start();
+  assert.equal(sim.al.config.running, true);
+  assert.ok(saved > 0, "running flag saved");
+  sim.run(3);
+  sim.al.panic();
+  assert.equal(sim.al.enabled, false);
+  assert.equal(sim.al.config.running, false);
+  assert.equal(sim.faders["input:0"], NEG_INF);
+  assert.equal(sim.faders["input:1"], NEG_INF);
+  assert.match(sim.al.getStatus().history[0].text, /Notaus/);
+  const again = new AutoLevel((sim.al as any).io, { ...sim.al.config, running: true });
+  assert.equal(again.config.running, true, "a config with running: true is restored as on");
 });
