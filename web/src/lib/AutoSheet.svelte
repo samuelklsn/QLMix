@@ -52,8 +52,10 @@
   }
   const sensitivities = [{ v: "low", l: "Niedrig" }, { v: "normal", l: "Normal" }, { v: "high", l: "Hoch" }] as const;
   const dante = $derived(auto?.dante);
+  const router = $derived(auto?.router);
+  const routing = $derived(router?.state === "searching" || router?.state === "testing");
   // Only channels that carry sound (or are matched) – the silent rest is summed up in one line.
-  const danteLive = $derived((dante?.channels ?? []).filter((c) => (c.level ?? -120) > -80 || c.match));
+  const danteLive = $derived((dante?.channels ?? []).filter((c) => (c.level ?? -120) > -80 || c.match || c.source));
   const danteSilent = $derived((dante?.channels.length ?? 0) - danteLive.length);
   const hz = (f: number) => (f >= 1000 ? `${(Math.round(f / 100) / 10).toLocaleString("de-DE")} kHz` : `${Math.round(f)} Hz`);
   const notchList = $derived(Object.entries(cfg?.notches ?? {}).flatMap(([key, list]) => {
@@ -356,14 +358,35 @@
           <div class="dchans">
             {#each danteLive as ch (ch.id)}
               <div class="dch">
-                <span class="dname">DVS {ch.num ?? ch.ch}</span>
-                <div class="mbar"><div class="mfill" class:live={(ch.level ?? -120) > -80} style="width: {Math.max(0, Math.min(100, ((ch.level ?? -120) + 90) / 90 * 100))}%"></div></div>
-                <span class="dinfo num">{ch.match ?? ((ch.level ?? -120) > -80 ? `${Math.round(ch.level!)} dB` : "kein Ton")}</span>
+                <div class="dtop">
+                  <span class="dname"><b class="num">DVS {ch.num ?? ch.ch}</b>{ch.rxName ? ` · ${ch.rxName}` : ""}</span>
+                  <div class="mbar"><div class="mfill" class:live={(ch.level ?? -120) > -80} style="width: {Math.max(0, Math.min(100, ((ch.level ?? -120) + 90) / 90 * 100))}%"></div></div>
+                </div>
+                <span class="dinfo" class:good={ch.relevant}>{ch.source ? (ch.connected ? `← ${ch.source}` : `${ch.source} nicht erreichbar`) : ch.match ?? ((ch.level ?? -120) > -80 ? `${Math.round(ch.level!)} dB` : "kein Ton")}</span>
               </div>
             {/each}
           </div>
         {/if}
         {#if danteSilent > 0}<p class="t-footnote">{danteSilent} weitere Dante-Kanäle ohne Ton.</p>{/if}
+        {#if dante && dante.state === "running"}
+          {#if router?.routes.length}
+            <ul class="notches">
+              {#each router.routes as r (r.rx)}<li><b>{r.label}</b><span class="num">Dante-Kanal {r.rx}</span></li>{/each}
+            </ul>
+          {/if}
+          {#if !dante.useful || routing}
+            <button class="pill primary wide" onclick={() => store.autoAction("danteRoute")} disabled={routing || !cfg.roomMics.length}>
+              {routing ? "Suche das Raum-Mikro …" : "Raum-Mikro automatisch zuweisen"}
+            </button>
+          {/if}
+          {#if router?.message}<p class="t-footnote" class:warnmsg={router.state === "error"} class:okmsg={router.state === "done"}>{router.message}</p>{/if}
+          {#if !dante.useful && !routing && !router?.message}
+            <p class="t-footnote">QLMix legt die Raum-Mikros selbst auf freie Kanäle der Dante-Soundkarte dieses PCs. Am Pult und an anderen Geräten ändert sich nichts. Während der Suche (bis zu ein paar Minuten) bitte normal in ein Mikro sprechen.</p>
+          {/if}
+          {#if router?.routes.length && !routing}
+            <button class="pill" onclick={() => store.autoAction("danteUnroute")}>Zuweisung wieder entfernen</button>
+          {/if}
+        {/if}
         <button class="pill" class:lit={cfg.notchesEnabled} aria-pressed={cfg.notchesEnabled}
           onclick={() => store.autoAction("config", { notchesEnabled: !cfg.notchesEnabled })}>EQ-Kerben gegen Pfeifen {cfg.notchesEnabled ? "an" : "aus"}</button>
         {#if notchList.length}
@@ -439,9 +462,12 @@
   .hpf { margin-top: var(--s3); }
   .warnmsg { color: var(--warn); }
   .dchans { display: flex; flex-direction: column; gap: var(--s2); }
-  .dch { display: grid; grid-template-columns: 56px 1fr minmax(90px, 160px); align-items: center; gap: var(--s3); font-size: var(--fs-footnote); }
+  .dch { display: flex; flex-direction: column; gap: 2px; }
+  .dtop { display: grid; grid-template-columns: minmax(0, 1fr) 72px; align-items: center; gap: var(--s3); font-size: var(--fs-callout); }
   .dname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--label-2); }
-  .dinfo { text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dname b { color: var(--label); font-weight: 600; }
+  .dinfo.good { color: var(--on); }
+  .dinfo { font-size: var(--fs-footnote); color: var(--label-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .mfill.live { background: var(--on); }
   .notches { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s1); font-size: var(--fs-callout); }
   .notches li { display: flex; justify-content: space-between; gap: var(--s3); }

@@ -1,6 +1,6 @@
 # STATUS – QLMix
 
-Stand: 2026-11-15 · Version **1.9.3** veröffentlicht (Release `v1.9.3`)
+Stand: 2026-11-15 · Version **1.10.0** veröffentlicht (Release `v1.10.0`)
 
 ## Fertig
 
@@ -105,7 +105,11 @@ Stand: 2026-11-15 · Version **1.9.3** veröffentlicht (Release `v1.9.3`)
 - 1.9.1 (veröffentlicht): Ergebnis vom Windows-PC (Screenshot 2026-11-15): Dante-Lesen klappt – die DVS erscheint als 8 Stereo-Geräte „DVS Receive 1-2 … 15-16“ (16 Kanäle), 4 Kanäle mit Ton, zugeordnet zu ST IN 7 „Sampler“. Fix: Anzeige „DVS 5“ statt „Kanal 1“, stille Kanäle zusammengefasst; Zuordnung prüft jetzt auch MIX/MTX (ein Mix gewinnt, wenn er so gut passt wie seine einzelne Quelle).
 - 1.9.2 (veröffentlicht): Screenshot nach 1.9.1: DVS 5–8 gleichmäßig um −47 dB, keine Zuordnung – und **Fehlalarm**: Kerbe 234 Hz −12 dB auf „Links“ (Samuel soll „Kerben entfernen“ drücken). Ursache: „gewachsen“ wurde als (letzter − kleinster Wert) ≥ 2 dB gemessen, Schwankung reichte. Fix: Anstieg = Mittel der letzten 3 − Mittel der ersten 3 Messungen ≥ 3 dB (Musik 5 dB), Töne ohne Anstieg nach 2,5 s gelten als stehend und werden ignoriert; Dante-Pfeifen wirkt nur noch auf Kanälen, die sicher einen Mix/Raum-/Sprecher-Mikro tragen (`classifyMatch`: alle gleich gut passenden Quellen müssen relevant sein). Versionsnummer in den Einstellungen.
 - 1.9.3 (veröffentlicht): Samuel: „erkennt Musik, obwohl keine gespielt oder gesungen wird“. Ursachen: Union über alle Kanäle (irgendein Kanal aktiv in 40 % von 3 s), Übersprechen (Bühnenmikros hören den Prediger über PA), Gespräche/Geräusche. Fix: pro Kanal ≥ 50 % von 5 s aktiv, Kontinuität ≥ 75 % der Frames innerhalb 10 dB vom lauten Pegel (Sprache hat Lücken), kein Musik-Kanal, wenn er mit dem sprechenden Mikro korreliert (≥ 0,5). Tests für Übersprechen/Gespräche schlagen mit altem Code fehl, mit neuem nicht.
-- Offen: Was liegt auf DVS 5–8? Wenn ein Mix (Livestream/Aufnahme) mit den Sprecher-Mikros → Pfeifschutz über Dante wirkt. Wenn nur der Sampler → wirkungslos; dann bräuchte es einen Raum-Mikro- oder Mix-Kanal auf einem freien DVS-Empfangskanal (Dante-Routing, nur mit Samuels OK).
+- 1.10.0 (veröffentlicht): Dante-Steuerung (ARC/UDP 4440, Format aus netaudio-core). Vom Mac aus **nur lesend** am echten Netz geprüft (2026-11-15): mDNS findet nur „PC-Vorne“ (192.168.1.246 = QLMix-Server mit DVS); dessen Belegung: DVS 1–2 ← Samplitude @ Aufnahme-PC (nicht erreichbar), **DVS 5–6 ← „Stream L/R“ @ Y001-Yamaha-QL5-1a5fa6 (verbunden)**, DVS 7–8 ← „Stream russisch“ @ MRX7-D, DVS 9–10 ← ST @ NY64-D (TF5, nicht erreichbar), 3–4 und 11–16 frei. QL5 und Rio antworten vom Mac aus nicht auf mDNS (eigenes Dante-Netz/VLAN?).
+  - Server liest alle 30 s die eigene DVS-Belegung; Kanäle mit Quelle vom Pult (QL/CL) gelten als relevant → Dante-Pfeifschutz greift auf dem Stream-Mix ohne Umverkabelung.
+  - Knopf „Raum-Mikro automatisch zuweisen“ (`dante-router.ts`): liest Pult-Dante-Eingänge, abonniert bis zu 4 freie DVS-Kanäle (von oben), prüft per Korrelation mit dem Raum-Mikro-Meter (≥ 0,8), entfernt Fehlversuche; merkt sich eigene Zuweisungen (`danteRoutes`), entfernt nur diese. Am echten Netz **nicht** schreibend getestet; braucht, dass der Server das Pult per mDNS findet.
+  - Test-Hooks: `QLMIX_DANTE_DEVICE=host[:port]`, `QLMIX_AUDIO_INPUT`.
+- Offen: Was liegt auf DVS 5–8? → geklärt (Stream-Mixe von QL5 und MRX7-D). Wenn ein Mix (Livestream/Aufnahme) mit den Sprecher-Mikros → Pfeifschutz über Dante wirkt. Wenn nur der Sampler → wirkungslos; dann bräuchte es einen Raum-Mikro- oder Mix-Kanal auf einem freien DVS-Empfangskanal (Dante-Routing, nur mit Samuels OK).
 - Die Raum-Automatik ist in der **Testphase** (Badge „Test“ im UI). Der Nutzer testet sie im echten Raum.
 
 ## Nächste Schritte

@@ -23,6 +23,8 @@ des Pults; bedient wird **im Browser** auf jedem Handy, Tablet oder Computer.
   öffnet nicht mehr bei Schritten oder Gemeindegesang, regelt ruhig statt ständig, Verlauf und Notaus für die Fernbedienung
 * **Neu in 1.8**: Raum-Automatik verstärkt nicht mehr zu stark (begrenztes Nachjustieren, Wirkungskontrolle, höchstens
   +6 dB für leise Sprecher, Obergrenze 0 dB), Verlauf mit Begründung, Knopf „Hochpass 100 Hz für Sprecher-Mikros“
+* **Neu in 1.10**: QLMix liest selbst, was auf der Dante-Soundkarte liegt (Namen und Quellen), nutzt Pult-Ausgänge wie den
+  Stream-Mix sofort für den Pfeifschutz und kann ein Raum-Mikro per Knopf selbst auf einen freien Dante-Kanal legen
 * **Neu in 1.9**: Pfeifschutz über Dante – QLMix hört den Ton der Dante Virtual Soundcard mit, erkennt Pfeifen am Ton und
   setzt eine schmale EQ-Kerbe auf die Pfeif-Frequenz (nur in freien EQ-Bändern), statt den Fader zurückzunehmen
 
@@ -189,8 +191,15 @@ Läuft auf dem QLMix-PC die **Dante Virtual Soundcard** (Modus WDM), hört QLMix
 * Die Kerben stehen im Auto-Fenster; **„Kerben entfernen“** stellt die Bänder genau wie vorher wieder her.
   **„EQ-Kerben gegen Pfeifen an/aus“** schaltet das ab.
 * Das dafür nötige Programm **ffmpeg** lädt das Windows-Update automatisch (einmalig etwa 100 MB).
-* Kommt kein Dante-Ton an, arbeitet der Pfeifschutz wie bisher über die Pult-Pegel. Steht dort „es kommt kein Ton an“,
-  ist der Soundkarte in Dante noch kein Kanal zugewiesen.
+* **QLMix liest die Belegung der Soundkarte selbst** (nur lesend): Neben jedem Kanal stehen sein Dante-Name und die
+  Quelle, z. B. „DVS 5 · Stream QL5 L ← Stream L @ QL5“. Kanäle, die vom **Pult** kommen (z. B. der Stream-Mix), nutzt
+  QLMix sofort für den Pfeifschutz.
+* **„Raum-Mikro automatisch zuweisen“:** Liegt kein passender Kanal auf der Soundkarte, legt QLMix auf Knopfdruck die
+  Raum-Mikros selbst auf **freie** Empfangskanäle dieser Soundkarte. Es liest dazu (nur lesend), woher das Pult seine
+  Dante-Eingänge bekommt, probiert die wahrscheinlichsten Quellen und prüft per Pegelvergleich, welche das Raum-Mikro
+  ist – während der Suche bitte in ein Mikro sprechen. Am Pult und an anderen Geräten ändert sich nichts; belegte Kanäle
+  werden nie angefasst. **„Zuweisung wieder entfernen“** nimmt genau die Zuweisungen von QLMix wieder weg.
+* Kommt kein passender Dante-Ton an, arbeitet der Pfeifschutz wie bisher über die Pult-Pegel.
 
 ### Klang: Hochpass für Sprecher-Mikros
 

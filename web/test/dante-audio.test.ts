@@ -68,3 +68,14 @@ test("relevance is judged safely: sampler alone is ambiguous, speech through the
   assert.deepEqual(classifyMatch([{ key: "stereoInput:6", corr: 0.95 }, { key: "mix:8", corr: 0.5 }], rel, null), { key: "stereoInput:6", relevant: false });
   assert.equal(classifyMatch([{ key: "mix:8", corr: 0.4 }], rel, null), null);
 });
+
+test("Dante names from the soundcard: console outputs are recognised", async () => {
+  const { shortDanteName, isConsoleName } = await import("../server/dante-audio.ts");
+  assert.equal(shortDanteName("Y001-Yamaha-QL5-1a5fa6"), "QL5");
+  assert.equal(shortDanteName("Y001-Yamaha-MRX7-D-1c5fbe"), "MRX7-D");
+  assert.equal(shortDanteName("Aufnahme-PC"), "Aufnahme-PC");
+  assert.equal(isConsoleName("Y001-Yamaha-QL5-1a5fa6"), true);
+  assert.equal(isConsoleName("Y000-Yamaha-NY64-D-1971fc"), false);
+  assert.equal(isConsoleName("Y001-Yamaha-MRX7-D-1c5fbe"), false);
+  assert.equal(isConsoleName("Aufnahme-PC"), false);
+});

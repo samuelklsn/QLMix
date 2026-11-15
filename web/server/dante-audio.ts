@@ -26,7 +26,19 @@ export interface DanteChannel {
   match: string | null;
   /** carries a mix, a room mic or a speaker mic – only then can feedback be heard in it */
   relevant: boolean;
+  /** Dante name of this receive channel on the soundcard, e.g. "Stream QL5 L" */
+  rxName: string | null;
+  /** Dante source, e.g. "Stream L @ QL5" (null = nothing assigned) */
+  source: string | null;
+  /** the source is currently reachable (subscription connected) */
+  connected: boolean;
+  /** the source is the mixing console – a console output (mix) */
+  fromConsole: boolean;
 }
+
+/** "Y001-Yamaha-QL5-1a5fa6" → "QL5" */
+export const shortDanteName = (n: string) => n.replace(/^Y\d+-Yamaha-/i, "").replace(/-[0-9a-f]{6}$/i, "");
+export const isConsoleName = (n: string) => /(^|[^a-z])(QL|CL)\d/i.test(n);
 
 export interface DanteStatus {
   state: "off" | "no-ffmpeg" | "no-device" | "starting" | "running" | "error";
@@ -139,6 +151,8 @@ export class DanteAudio extends EventEmitter {
   /** level history per channel id (dB, one value per `sample()` call) */
   readonly history = new Map<string, number[]>();
   private matches = new Map<string, { label: string; relevant: boolean }>();
+  /** what the Dante soundcard itself reports per receive channel number */
+  private info = new Map<number, { rxName: string | null; source: string | null; connected: boolean; fromConsole: boolean }>();
   /** supplies the "music is playing" flag for the detector */
   music: () => boolean = () => false;
 
@@ -172,7 +186,24 @@ export class DanteAudio extends EventEmitter {
 
   /** Feedback in this channel means feedback in the room (it carries a mix, room or speaker mic). */
   isRelevant(id: string): boolean {
-    return this.matches.get(id)?.relevant ?? false;
+    const ch = this.status.channels.find((c) => c.id === id);
+    return (this.matches.get(id)?.relevant ?? false) || (ch ? this.info.get(ch.num)?.fromConsole === true : false);
+  }
+
+  /** Receive channel list read from the soundcard over Dante (names and sources). */
+  setDanteInfo(rx: { number: number; name: string | null; txChannel: string | null; txDevice: string | null; status: number }[]): void {
+    this.info = new Map(rx.map((c) => [c.number, {
+      rxName: c.name,
+      source: c.txChannel && c.txDevice ? `${c.txChannel} @ ${shortDanteName(c.txDevice)}` : null,
+      connected: c.status === 9,
+      fromConsole: !!c.txDevice && isConsoleName(c.txDevice),
+    }]));
+    for (const c of this.status.channels) Object.assign(c, this.infoFor(c.num));
+    this.updateMessage();
+  }
+
+  private infoFor(num: number) {
+    return this.info.get(num) ?? { rxName: null, source: null, connected: false, fromConsole: false };
   }
 
   /** Called every 100 ms: records the current level of every channel for matching. */
@@ -258,7 +289,7 @@ export class DanteAudio extends EventEmitter {
         if (c) {
           const m = this.matches.get(id);
           c.level = Math.round(level * 10) / 10; c.peak = level > SILENT_DB ? Math.round(a.peaks[ch]) : null;
-          c.match = m?.label ?? null; c.relevant = m?.relevant ?? false;
+          c.match = m?.label ?? null; c.relevant = (m?.relevant ?? false) || this.infoFor(c.num).fromConsole;
         }
         if (hit) this.emit("feedback", { id, ...hit } satisfies FeedbackHit & { id: string });
       });
@@ -281,7 +312,8 @@ export class DanteAudio extends EventEmitter {
       for (let i = 0; i < c.analyzer.channels; i++) {
         const id = `${c.device}#${i + 1}`;
         const old = this.status.channels.find((x) => x.id === id);
-        channels.push(old ?? { id, device: c.device, ch: i + 1, num: firstChannel(c.device) + i, level: null, peak: null, match: null, relevant: false });
+        const num = firstChannel(c.device) + i;
+        channels.push(old ?? { id, device: c.device, ch: i + 1, num, level: null, peak: null, match: null, relevant: false, ...this.infoFor(num) });
       }
     }
     this.status = { ...this.status, channels: channels.sort((a, b) => a.num - b.num) };
@@ -294,7 +326,7 @@ export class DanteAudio extends EventEmitter {
     this.status.receiving = live.length > 0;
     this.status.useful = useful.length > 0;
     this.status.message = useful.length
-      ? `Pfeifschutz über Dante aktiv: ${useful.map((c) => c.match).filter((x, i, a) => a.indexOf(x) === i).join(", ")}.`
+      ? `Pfeifschutz über Dante aktiv: ${useful.map((c) => c.rxName ?? c.match ?? `DVS ${c.num}`).filter((x, i, a) => a.indexOf(x) === i).join(", ")}.`
       : live.length
         ? `Dante-Ton kommt an (${live.length} von ${this.status.channels.length} Kanälen), aber darauf liegt kein Mix und kein Raum- oder Sprecher-Mikro – darin ist Pfeifen nicht zu hören. Der Pfeifschutz läuft über die Pult-Pegel.`
         : "Mit der Dante-Soundkarte verbunden, aber es kommt kein Ton an. Der Pfeifschutz läuft über die Pult-Pegel.";

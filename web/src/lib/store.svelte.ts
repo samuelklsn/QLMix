@@ -56,7 +56,10 @@ export interface DanteState {
   receiving: boolean;
   useful: boolean;
   devices: string[];
-  channels: { id: string; device: string; ch: number; num: number; level: number | null; peak: number | null; match: string | null }[];
+  channels: {
+    id: string; device: string; ch: number; num: number; level: number | null; peak: number | null; match: string | null;
+    relevant: boolean; rxName: string | null; source: string | null; connected: boolean; fromConsole: boolean;
+  }[];
 }
 
 export interface AutoMic {
@@ -76,9 +79,16 @@ export interface AutoMic {
   closesIn: number | null;
 }
 
+export interface DanteRouteState {
+  state: "idle" | "searching" | "testing" | "done" | "error";
+  message: string;
+  routes: { rx: number; txChannel: string; txDevice: string; mic: string; label: string }[];
+}
+
 export interface AutoState {
   config: AutoConfigState;
   dante?: DanteState;
+  router?: DanteRouteState;
   status: {
     enabled: boolean;
     message: string;
@@ -299,7 +309,7 @@ class Store {
     for (const p of params) this.write(eqWriteKeys(c, p, s), eqRaw(snapped, p, s), immediate);
   }
 
-  autoAction(action: "start" | "stop" | "panic" | "reference" | "config" | "forget" | "forgetLimits" | "clearNotches", config?: Partial<AutoConfigState>): void {
+  autoAction(action: "start" | "stop" | "panic" | "reference" | "config" | "forget" | "forgetLimits" | "clearNotches" | "danteRoute" | "danteUnroute", config?: Partial<AutoConfigState>): void {
     this.autoError = null;
     this.autoErrorAction = null;
     this.autoOk = null;

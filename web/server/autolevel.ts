@@ -22,6 +22,7 @@
 
 import { type ChannelId, levelToPosition } from "../shared/rcp.ts";
 import { type Notch, hzText } from "./notch.ts";
+import type { DanteRoute } from "./dante-router.ts";
 
 export type Sensitivity = "low" | "normal" | "high";
 
@@ -68,12 +69,14 @@ export interface AutoConfig {
   notchesEnabled: boolean;
   /** channel key → EQ notches set by the automatic */
   notches: Record<string, Notch[]>;
+  /** Dante subscriptions QLMix made on this PC's soundcard (room mics) – only these are ever removed */
+  danteRoutes: DanteRoute[];
 }
 
 export const DEFAULT_AUTO_CONFIG: AutoConfig = {
   channels: [], roomMics: [], musicIgnore: [], reference: null, offset: 0, speed: 1, sensitivity: "normal",
   ceiling: 0, minLevel: -20, startLevel: -10, closeAfter: 30, learned: {}, limits: {}, profiles: {}, running: false,
-  notchesEnabled: true, notches: {},
+  notchesEnabled: true, notches: {}, danteRoutes: [],
 };
 
 export interface AutoIO {
@@ -324,7 +327,7 @@ export class AutoLevel {
       speed: c.speed, sensitivity: (["low", "normal", "high"] as const).includes(c.sensitivity) ? c.sensitivity : "normal",
       ceiling: c.ceiling, minLevel: c.minLevel, startLevel: c.startLevel, closeAfter: c.closeAfter,
       learned: { ...c.learned }, limits: { ...c.limits }, running: !!c.running,
-      notchesEnabled: c.notchesEnabled !== false, notches: { ...c.notches },
+      notchesEnabled: c.notchesEnabled !== false, notches: { ...c.notches }, danteRoutes: [...(c.danteRoutes ?? [])],
       profiles: Object.fromEntries(Object.entries(c.profiles ?? {}).map(([k, p]) => [k, { ...p, base: p.base ?? p.sum }])),
     };
     this.status = this.emptyStatus("Aus");

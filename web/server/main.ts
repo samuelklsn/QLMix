@@ -17,6 +17,8 @@ import { QLLink } from "./ql-link.ts";
 import { AutoLevel, type AutoConfig, DEFAULT_AUTO_CONFIG } from "./autolevel.ts";
 import { ensureTls } from "./tls.ts";
 import { DanteAudio, classifyMatch, rankMatches } from "./dante-audio.ts";
+import { addSubscriptions, discoverDevices, localAddresses, readRxChannels, removeSubscriptions } from "./dante-control.ts";
+import { DanteRouter } from "./dante-router.ts";
 import { type Notch, planNotch, hzText } from "./notch.ts";
 import { CUSTOM_FADER_ELEMENTS } from "../shared/ql-params.ts";
 import {
@@ -272,6 +274,53 @@ setInterval(() => {
   }
 }, 3000);
 dante.start();
+
+// What our own Dante soundcard receives (names, sources) – read over Dante every 30 s, read only.
+let ownDvs: import("./dante-control.ts").DanteDevice | null = null;
+async function refreshDanteInfo() {
+  try {
+    // For tests: QLMIX_DANTE_DEVICE="host[:port]" reads that soundcard instead of looking for our own.
+    const forced = process.env.QLMIX_DANTE_DEVICE;
+    if (!ownDvs && forced) { const [host, port] = forced.split(":"); ownDvs = { name: "Test", host, port: Number(port) || 4440 }; }
+    if (!ownDvs) {
+      const ips = new Set(localAddresses());
+      ownDvs = (await discoverDevices()).find((d) => ips.has(d.host)) ?? null;
+    }
+    if (ownDvs) dante.setDanteInfo(await readRxChannels(ownDvs));
+  } catch (e) {
+    ownDvs = null;
+    console.log(`[Dante] Kanalliste der Soundkarte nicht lesbar: ${e instanceof Error ? e.message : e}`);
+  }
+}
+void refreshDanteInfo();
+setInterval(() => void refreshDanteInfo(), 30000);
+
+// Puts the room mics on free receive channels of this PC's Dante soundcard (button in the auto sheet).
+const router = new DanteRouter({
+  discover: () => discoverDevices(),
+  localIps: localAddresses,
+  readRx: readRxChannels,
+  add: addSubscriptions,
+  remove: removeSubscriptions,
+  roomMics: () => auto.config.roomMics.map((c) => {
+    const n = link.values.get(channelParamKey(c, "name"));
+    return { key: `${c.kind}:${c.index}`, index: c.index, label: `${channelLabel(c)}${typeof n === "string" && n ? ` ${n}` : ""}` };
+  }),
+  correlate: (rx, key, since) => {
+    const ch = dante.status.channels.find((c) => c.num === rx);
+    const n = Math.min(MATCH_LEN, Math.floor((Date.now() - since) / 100));
+    if (!ch || n < 50) return null;
+    const audio = (dante.history.get(ch.id) ?? []).slice(-n);
+    const meter = (inputHistory.get(key) ?? []).slice(-n);
+    if (audio.length < n || meter.length < n) return null;
+    return rankMatches(audio, new Map([[key, meter]]))[0]?.corr ?? null;
+  },
+  now: () => Date.now(),
+  sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+  routes: () => auto.config.danteRoutes,
+  saveRoutes: (routes) => { auto.config.danteRoutes = routes; saveAuto(); },
+  log: (text) => console.log(`[Dante] ${text}`),
+});
 updateWatched(); // speaker mics: EQ re-read in the background (notches)
 
 auto.onActiveChange = (label) => { if (auto.enabled) console.log(`[Auto] aktives Mikro: ${label ?? "keins"}`); };
@@ -299,7 +348,7 @@ ql.on("inmeters", (levels: Map<string, number>) => {
   pushMeters("stereoInput", stereo);
 });
 
-const autoState = () => ({ t: "auto", config: auto.config, status: auto.getStatus(), dante: dante.status });
+const autoState = () => ({ t: "auto", config: auto.config, status: auto.getStatus(), dante: dante.status, router: router.status });
 let lastAuto = "";
 setInterval(() => {
   auto.tick();
@@ -321,6 +370,8 @@ function handleAuto(client: Client, m: any) {
     case "reference": error = auto.takeReference(); saveAuto(); break;
     case "forget": auto.config.learned = {}; auto.config.profiles = {}; saveAuto(); break;
     case "forgetLimits": auto.config.limits = {}; saveAuto(); break;
+    case "danteRoute": void router.autoRoute(); break;
+    case "danteUnroute": void router.removeAll(); break;
     case "clearNotches": { const n = clearNotches(); console.log(`[Auto] ${n} EQ-Kerben entfernt`); saveAuto(); break; }
     case "config": {
       const c = m.config ?? {};
