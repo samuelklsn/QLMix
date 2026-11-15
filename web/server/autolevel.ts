@@ -282,8 +282,9 @@ function faderDiffers(a: number, b: number): boolean {
   return Math.abs(a - b) > 50 && Math.abs(levelToPosition(a) - levelToPosition(b)) > 0.012;
 }
 
-const dbText = (raw: number) => (raw <= NEG_INF ? "−∞" : `${raw > 0 ? "+" : raw < 0 ? "−" : ""}${Math.abs(Math.round(raw / 10) / 10)} dB`);
-const signed = (db: number) => `${db > 0 ? "+" : db < 0 ? "−" : ""}${Math.abs(db).toFixed(1)} dB`;
+/** German number format for the UI and history: "+4,4 dB", "−∞". */
+const dbText = (raw: number) => (raw <= NEG_INF ? "−∞" : `${raw > 0 ? "+" : raw < 0 ? "−" : ""}${String(Math.abs(Math.round(raw / 10) / 10)).replace(".", ",")} dB`);
+const signed = (db: number) => `${db > 0 ? "+" : db < 0 ? "−" : ""}${Math.abs(db).toFixed(1).replace(".", ",")} dB`;
 
 export class AutoLevel {
   config: AutoConfig;

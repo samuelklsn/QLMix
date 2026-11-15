@@ -3,6 +3,7 @@
   import { store } from "./store.svelte.ts";
   import Sheet from "./Sheet.svelte";
   import Icon from "./Icon.svelte";
+  import Switch from "./Switch.svelte";
 
   let { onclose }: { onclose: () => void } = $props();
 
@@ -128,9 +129,9 @@
         <dt>EQ</dt>
         <dd>{info?.eqStatus === "available" ? `Verfügbar (${info.eq})` : info?.eqStatus === "unavailable" ? "Vom Pult nicht freigegeben" : "Prüfe …"}</dd>
       </dl>
+      <Switch checked={store.rawMode} label="Rohwerte anzeigen" detail="Zeigt die Werte so, wie das Pult sie sendet (zum Abgleichen)." onchange={(v) => store.setRawMode(v)} />
       <div class="row">
         <button class="pill" onclick={() => (showLog = !showLog)}>{showLog ? "Log ausblenden" : "Log anzeigen"}</button>
-        <button class="pill" class:lit={store.rawMode} aria-pressed={store.rawMode} onclick={() => store.setRawMode(!store.rawMode)}>Rohwerte {store.rawMode ? "an" : "aus"}</button>
       </div>
       <button class="pill" onclick={() => store.probeFaderBanks()} disabled={!store.connected || store.probe.running}>
         {store.probe.running ? "Lese Fader-Ebenen …" : "Fader-Ebenen vom Pult lesen"}

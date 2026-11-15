@@ -1,6 +1,6 @@
 # STATUS – QLMix
 
-Stand: 2026-11-15 · Version **1.10.0** veröffentlicht (Release `v1.10.0`)
+Stand: 2026-11-15 · Version **1.11.0** veröffentlicht (Release `v1.11.0`)
 
 ## Fertig
 
@@ -109,7 +109,10 @@ Stand: 2026-11-15 · Version **1.10.0** veröffentlicht (Release `v1.10.0`)
   - Server liest alle 30 s die eigene DVS-Belegung; Kanäle mit Quelle vom Pult (QL/CL) gelten als relevant → Dante-Pfeifschutz greift auf dem Stream-Mix ohne Umverkabelung.
   - Knopf „Raum-Mikro automatisch zuweisen“ (`dante-router.ts`): liest Pult-Dante-Eingänge, abonniert bis zu 4 freie DVS-Kanäle (von oben), prüft per Korrelation mit dem Raum-Mikro-Meter (≥ 0,8), entfernt Fehlversuche; merkt sich eigene Zuweisungen (`danteRoutes`), entfernt nur diese. Am echten Netz **nicht** schreibend getestet; braucht, dass der Server das Pult per mDNS findet.
   - Test-Hooks: `QLMIX_DANTE_DEVICE=host[:port]`, `QLMIX_AUDIO_INPUT`.
-- Offen: Was liegt auf DVS 5–8? → geklärt (Stream-Mixe von QL5 und MRX7-D). Wenn ein Mix (Livestream/Aufnahme) mit den Sprecher-Mikros → Pfeifschutz über Dante wirkt. Wenn nur der Sampler → wirkungslos; dann bräuchte es einen Raum-Mikro- oder Mix-Kanal auf einem freien DVS-Empfangskanal (Dante-Routing, nur mit Samuels OK).
+- Offen: Was liegt auf DVS 5–8? → geklärt (Stream-Mixe von QL5 und MRX7-D).
+- **Bestätigt am echten System (Screenshot 2026-11-15, 1.10.0):** Auto-Fenster zeigt „Pfeifschutz über Dante aktiv: 05 Stream QL5 L, 06 Stream QL R“; DVS-Namen und Quellen werden korrekt gelesen (Samplitude/TF5 „nicht erreichbar“, Stream RU ← MRX7-D). Sprecher-Mikros beim Nutzer: CH 1 Kanzel, CH 2 Links, CH 3 Rechts, CH 4 Rechts 2.
+- 1.11.0 (veröffentlicht): Design-Review (apple-design-Skill) umgesetzt – Auto-Fenster in Betrieb/Einrichtung getrennt (Handy: Betrieb ~1 Bildschirm statt 5), auf iPad/Computer angedockt, ruhige Statuszeile (3 s), `Switch.svelte` (EQ-Kerben, Rohwerte), Notaus als ruhigerer roter Rahmen-Knopf, Zustandsfarben (rot nur bei Fehlern), Erklärtexte gekürzt bzw. aufklappbar, Mikro-Kacheln (Komma, grüner Punkt statt zweitem Rahmen), Fader-Skala nur am ersten Zug, Ebenen-Auswahl wie Segment-Umschalter, deutsche Kommas im Verlauf.
+- Nächster Test: echtes Pfeifen im Gottesdienst-Alltag beobachten (Verlauf: „Pfeifen bei … – EQ-Kerbe …“), Fehlalarme melden lassen. Wenn ein Mix (Livestream/Aufnahme) mit den Sprecher-Mikros → Pfeifschutz über Dante wirkt. Wenn nur der Sampler → wirkungslos; dann bräuchte es einen Raum-Mikro- oder Mix-Kanal auf einem freien DVS-Empfangskanal (Dante-Routing, nur mit Samuels OK).
 - Die Raum-Automatik ist in der **Testphase** (Badge „Test“ im UI). Der Nutzer testet sie im echten Raum.
 
 ## Nächste Schritte

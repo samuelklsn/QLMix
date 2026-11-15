@@ -10,8 +10,10 @@
     label?: string;
     onchange: (raw: number) => void;
     ontouch?: (active: boolean) => void;
+    /** dB numbers next to the track – false: fine tick marks only (the scale is read on the first strip) */
+    numbers?: boolean;
   }
-  let { value, accent = "#30d158", disabled = false, meter = null, label = "Fader", onchange, ontouch }: Props = $props();
+  let { value, accent = "#30d158", disabled = false, meter = null, label = "Fader", onchange, ontouch, numbers = true }: Props = $props();
 
   let track: HTMLDivElement;
   let dragging = $state(false);
@@ -112,9 +114,9 @@
 </script>
 
 <div class="fader" class:disabled bind:clientHeight={height}>
-  <div class="scale">
+  <div class="scale" class:ticks={!numbers} aria-hidden="true">
     {#each FADER_MARKS as [db, label]}
-      <span class:zero={db === 0} style="top: {(1 - (db === null ? 0 : levelToPosition(db * 100))) * travel + CAP / 2}px">{label}</span>
+      <span class:zero={db === 0} style="top: {(1 - (db === null ? 0 : levelToPosition(db * 100))) * travel + CAP / 2}px">{numbers ? label : ""}</span>
     {/each}
   </div>
   <div
@@ -173,6 +175,9 @@
     letter-spacing: -0.02em;
   }
   .scale span.zero { color: var(--label); font-weight: 700; }
+  /* tick marks only */
+  .scale.ticks span { right: 4px; width: 6px; height: 1px; background: var(--label-3); }
+  .scale.ticks span.zero { width: 9px; height: 2px; background: var(--label-2); }
   .track {
     position: relative;
     flex: 1;

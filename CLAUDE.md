@@ -28,7 +28,7 @@
 - **Mac-App** (Swift, `Sources/QLMix`): der erste Prototyp. Sie kann kein EQ über RCP, weil das Pult EQ nicht über RCP anbietet.
   - TODO: klären, ob die Mac-App noch weiterentwickelt werden soll. Seit der Web-Version wurde sie nicht mehr angefasst.
 - **Repo:** https://github.com/samuelklsn/QLMix (öffentlich, Branch `main`)
-  - Aktuelle Version **1.10.0**, Releases als GitHub-Release mit Tag `vX.Y.Z`.
+  - Aktuelle Version **1.11.0**, Releases als GitHub-Release mit Tag `vX.Y.Z`.
 
 ## Tech-Stack
 
@@ -125,6 +125,7 @@ web/
 - `Sheet.svelte`: gemeinsames Dialogfenster.
   - Props: `title`, `subtitle?`, `badge?`, `width?`, `docked?` (Seitenbereich statt Fenster), `onclose`, Snippets `header?` und `children`.
   - Escape schließt das Fenster.
+- `Switch.svelte`: Ein/Aus-Einstellung als Zeile mit Schalter (`role="switch"`). Für Einstellungen statt `.pill.lit`.
 - `Icon.svelte`: SVG-Icons (gear, close, back, forward, play, stop, rack, wave, lock, check, warning). Prop `name`, optional `size`.
 - `Strip.svelte`: Kanalzug (Nummer, Namensschild, ON, CUE, Wert, Fader).
 - `Fader.svelte`: Fader mit Skala, Meter (mit Spitzenwert), Maus/Touch/Rad/Tastatur. Doppeltippen = 0 dB, langsames Ziehen = Feinmodus (bis ¼ Weg), ⌥ = fein.
@@ -133,7 +134,9 @@ web/
   - Wischen auf dem Kanalnamen wechselt den Kanal.
 - `ChannelHead.svelte`: Kopf des Kanal-Bereichs mit Eingangs-/Ausgangspegel (Spitzenwert 1,5 s), waagrechtem Fader (Doppelklick = 0 dB), ON, CUE und Gain ±1 dB.
 - `EqEditor.svelte`: Canvas-Kurve mit ziehbaren Punkten und Reglern pro Band.
-- `DynamicsPanel.svelte`, `RackSheet.svelte`, `SettingsSheet.svelte`, `AutoSheet.svelte`.
+- `DynamicsPanel.svelte`, `RackSheet.svelte`, `SettingsSheet.svelte`.
+- `AutoSheet.svelte`: Raum-Automatik mit Reitern **Betrieb** (Zustand, Start/Stopp, Sprecher-Mikros, Pfeifschutz, Verlauf, Notaus) und **Einrichtung** (Schritte 1–6). Auf iPad/Computer angedockt wie der Kanal-Bereich (immer nur ein Seitenbereich). Statuszeile wechselt zu „Bereit“ erst nach 3 s Ruhe. Zustandspunkte: grün gut, grau nicht genutzt, orange Achtung, rot Fehler.
+- `Fader.svelte`/`Strip.svelte`: Prop `scale` – dB-Zahlen nur am ersten Kanalzug einer Reihe, sonst nur Striche.
 - `store.svelte.ts`: zentraler Store (WebSocket, Werte-Map, Schreiben mit Touch-Schutz).
 
 ## Design-System

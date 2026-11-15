@@ -66,7 +66,13 @@
   const allForSheet = $derived(model ? [...channelsOf(model, "input"), ...channelsOf(model, "stereoInput"), ...channelsOf(model, "mix"), ...channelsOf(model, "matrix"), channelId("stereo", 0), channelId("mono", 0)] : []);
 
   // Musicians (locked to their mix) can't open channel settings (gain/EQ/names).
-  const openSheet = $derived(lockedMix === null ? (ch: ChannelId) => (sheet = ch) : undefined);
+  // On iPad/computer one panel sits next to the mixer: the channel or the automatic.
+  const openSheet = $derived(lockedMix === null ? (ch: ChannelId) => { sheet = ch; if (dockable) autoOpen = false; } : undefined);
+  function toggleAuto() {
+    if (dockable && autoOpen) { autoOpen = false; return; }
+    autoOpen = true;
+    if (dockable) sheet = null;
+  }
 
   function mixName(i: number) {
     const v = store.get(channelParamKey(channelId("mix", i), "name"));
@@ -116,7 +122,7 @@
 
     <div class="tools">
       {#if lockedMix === null}
-        <button class="tool" class:auto-on={store.auto?.status.enabled} onclick={() => (autoOpen = true)} aria-label="Raum-Automatik">
+        <button class="tool" class:auto-on={store.auto?.status.enabled} onclick={toggleAuto} aria-label="Raum-Automatik" aria-expanded={autoOpen}>
           <Icon name="wave" size={16} /><span>Auto</span>
         </button>
         {#if store.eqSchema?.kind === "ql"}
@@ -158,21 +164,23 @@
   <main class="mixer" class:dim={!store.connected}>
     <div class="strips" bind:this={scroller}>
       {#if current}
-        {#each current.channels as c (channelKey(c))}
-          <Strip channel={c} mix={c.kind === "input" || c.kind === "stereoInput" ? mixMode : null} onopen={openSheet} selected={dockable && isSel(c)} />
+        {#each current.channels as c, i (channelKey(c))}
+          <Strip channel={c} mix={c.kind === "input" || c.kind === "stereoInput" ? mixMode : null} onopen={openSheet} selected={dockable && isSel(c)} scale={i === 0} />
         {/each}
       {/if}
     </div>
     {#if masters.length}
       <div class="masters">
-        {#each masters as c (channelKey(c))}
-          <Strip channel={c} master onopen={openSheet} selected={dockable && isSel(c)} />
+        {#each masters as c, i (channelKey(c))}
+          <Strip channel={c} master onopen={openSheet} selected={dockable && isSel(c)} scale={i === 0} />
         {/each}
       </div>
     {/if}
   </main>
   {#if sheet && dockable}
     <ChannelSheet docked channel={sheet} channels={allForSheet} onclose={() => (sheet = null)} onselect={(c) => (sheet = c)} />
+  {:else if autoOpen && dockable}
+    <AutoSheet docked onclose={() => (autoOpen = false)} />
   {/if}
   </div>
 
@@ -202,7 +210,7 @@
 {#if rack}
   <RackSheet onclose={() => (rack = false)} />
 {/if}
-{#if autoOpen}
+{#if autoOpen && !dockable}
   <AutoSheet onclose={() => (autoOpen = false)} />
 {/if}
 
@@ -311,7 +319,8 @@
     transition: background-color 120ms var(--ease), color 120ms;
   }
   .chip:hover { color: var(--label); }
-  .chip.sel { background: var(--label); color: #0b0c0f; box-shadow: none; }
+  /* same selection look as the segmented control (Mischen | Monitor) */
+  .chip.sel { background: var(--surface-3); color: var(--label); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), inset 0 0 0 1px var(--hairline); }
   .chip.send.sel { background: var(--send); color: var(--send-ink); }
   .locked { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-callout); color: var(--label-2); min-height: var(--h-compact); }
   .locked b { color: var(--send); }

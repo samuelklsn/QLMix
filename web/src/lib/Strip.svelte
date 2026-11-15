@@ -14,8 +14,10 @@
     onopen?: (c: ChannelId) => void;
     /** shown in the docked channel panel */
     selected?: boolean;
+    /** dB numbers on the fader scale (only the first strip of a row shows them) */
+    scale?: boolean;
   }
-  let { channel, mix = null, master = false, onopen, selected = false }: Props = $props();
+  let { channel, mix = null, master = false, onopen, selected = false, scale = true }: Props = $props();
 
   const sendMode = $derived(mix !== null);
   const level = $derived(store.level(channel, mix));
@@ -62,6 +64,7 @@
       {meter}
       label={sendMode ? `${name} Send` : `${name} Fader`}
       onchange={setLevel}
+      numbers={scale}
       ontouch={(a) => store.touch(store.levelKeys(channel, mix), a)}
     />
   </div>

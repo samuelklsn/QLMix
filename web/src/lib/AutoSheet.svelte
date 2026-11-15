@@ -1,10 +1,12 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { type ChannelId, channelLabel, channelParamKey, channelsOf } from "../../shared/rcp.ts";
   import { store } from "./store.svelte.ts";
   import Sheet from "./Sheet.svelte";
   import Icon from "./Icon.svelte";
+  import Switch from "./Switch.svelte";
 
-  let { onclose }: { onclose: () => void } = $props();
+  let { onclose, docked = false }: { onclose: () => void; docked?: boolean } = $props();
 
   const auto = $derived(store.auto);
   const st = $derived(auto?.status);
@@ -78,7 +80,7 @@
     return typeof v === "string" && v ? v : channelLabel(c);
   };
   const pct = (db: number | null | undefined) => (db === null || db === undefined ? 0 : Math.max(0, Math.min(100, ((db + 80) / 80) * 100)));
-  const fmt = (db: number | null | undefined) => (db === null || db === undefined ? "–" : `${db.toFixed(1)} dB`);
+  const fmt = (db: number | null | undefined) => (db === null || db === undefined ? "–" : `${db.toFixed(1).replace(".", ",").replace("-", "−")} dB`);
   const speeds = [{ v: 0.5, l: "Langsam" }, { v: 1, l: "Normal" }, { v: 2, l: "Schnell" }];
   const closeTimes = [15, 30, 60, 120];
 
@@ -91,7 +93,7 @@
     store.autoAction("config", { [k]: Number((e.currentTarget as HTMLInputElement).value) });
     delete draft[k];
   }
-  const dbText = (db: number) => `${db > 0 ? "+" : db < 0 ? "−" : ""}${Math.abs(Math.round(db * 10) / 10)} dB`;
+  const dbText = (db: number) => `${db > 0 ? "+" : db < 0 ? "−" : ""}${Math.abs(Math.round(db * 10) / 10).toLocaleString("de-DE")} dB`;
 
   /** What is still missing before the automatic can start – shown as a checklist. */
   const missing = $derived.by(() => {
@@ -103,325 +105,394 @@
     if (!cfg.channels.length) out.push("Unter 3 die Sprecher-Mikrofone antippen.");
     return out;
   });
+
+  // ------------------------------------------------------------ Betrieb | Einrichtung
+  // Daily use (is everything fine? stop, emergency stop, history) is one screen; the one-time
+  // setup lives in its own tab. Until the setup is complete, the setup tab opens first.
+  const complete = $derived(!!cfg && cfg.roomMics.length > 0 && cfg.channels.length > 0 && cfg.reference !== null);
+  let tab = $state<"run" | "setup">(readTab());
+  function readTab(): "run" | "setup" {
+    try { const t = localStorage.getItem("qlmix.autoTab"); if (t === "run" || t === "setup") return t; } catch { /* private mode */ }
+    return "run";
+  }
+  function setTab(t: "run" | "setup") {
+    tab = t;
+    try { localStorage.setItem("qlmix.autoTab", t); } catch { /* private mode */ }
+  }
+  let tabChecked = false;
+  $effect(() => {
+    if (tabChecked || !cfg) return;
+    tabChecked = true;
+    if (!untrack(() => complete)) tab = "setup";
+  });
+
+  // ------------------------------------------------------------ calm status line
+  // The status flips to "Bereit – kein Mikrofon spricht" in every speech pause. Show an idle
+  // message only after it lasted 3 s; real changes (speaker, warnings) show at once.
+  let shown = $state<{ message: string; level: "ok" | "info" | "warn"; active: string | null } | null>(null);
+  let idleSince: number | null = null;
+  $effect(() => {
+    if (!st) return;
+    const next = { message: st.message, level: st.level, active: st.active };
+    const cur = untrack(() => shown);
+    const idle = st.active === null && st.level !== "warn";
+    if (!idle || !cur || cur.active === null || !st.enabled) { idleSince = null; shown = next; return; }
+    idleSince ??= performance.now();
+    if (performance.now() - idleSince >= 3000) { idleSince = null; shown = next; }
+  });
+
+  // ------------------------------------------------------------ state colours: red only for real faults
+  type Health = "good" | "neutral" | "warn" | "bad";
+  const danteHealth = $derived.by((): Health | null => {
+    if (!dante || dante.state === "off" || dante.state === "no-device") return null;
+    if (dante.state === "error" || dante.state === "no-ffmpeg") return "warn";
+    return dante.useful ? "good" : "neutral";
+  });
 </script>
 
-<Sheet title="Raum-Automatik" badge="Test" {onclose}>
+<Sheet title="Raum-Automatik" badge="Test" {onclose} {docked} width={docked ? 460 : 640}>
   {#if !auto || !cfg || !st}
     <p class="t-footnote">Verbinde …</p>
   {:else}
-    <!-- Status + start/stop -->
-    <div class="hero">
-      <div class="status {st.level}">
-        <span class="sdot"></span>
-        <div class="stext">
-          <b class="t-headline">{st.message}</b>
-          <span class="t-footnote">{st.active ? `Aktives Mikro: ${st.active}` : "Kein aktives Mikro"}</span>
-          {#if st.event}<span class="event t-footnote"><Icon name="check" size={13} /> {st.event}</span>{/if}
-        </div>
-      </div>
-      <div class="health" aria-label="Zustand">
-        <span class="chip" class:good={store.connected}><span class="dot2"></span>Pult</span>
-        <span class="chip" class:good={st.metersAvailable}><span class="dot2"></span>Pegel</span>
-        <span class="chip" class:good={st.room.fresh}><span class="dot2"></span>Raum-Mikros</span>
-        {#if dante && dante.state !== "off" && dante.state !== "no-device"}<span class="chip" class:good={dante.useful}><span class="dot2"></span>Dante</span>{/if}
-        {#if st.music}<span class="chip music"><Icon name="wave" size={13} />Musik</span>{/if}
-      </div>
-      {#if st.enabled}
-        <button class="pill wide cta" onclick={() => store.autoAction("stop")}><Icon name="stop" size={16} /> Automatik stoppen</button>
-      {:else}
-        <button class="pill wide cta" class:primary={missing.length === 0} onclick={() => store.autoAction("start")}><Icon name="play" size={16} /> Automatik starten</button>
-        {#if missing.length > 0}
-          <div class="todo">
-            <span class="todo-title"><Icon name="warning" size={15} /> Noch zu tun</span>
-            <ul>{#each missing as m}<li>{m}</li>{/each}</ul>
-          </div>
-        {/if}
-      {/if}
-      {#if store.autoError && store.autoErrorAction !== "reference"}<p class="err" role="alert">{store.autoError}</p>{/if}
-      {#if confirmPanic}
-        <div class="confirm" role="alert">
-          <p class="t-callout">Automatik stoppen und <b>alle Sprecher-Mikros zuziehen</b>?</p>
-          <div class="row">
-            <button class="pill" onclick={() => (confirmPanic = false)}>Abbrechen</button>
-            <button class="pill danger" onclick={() => { store.autoAction("panic"); confirmPanic = false; }}>Alle zu</button>
-          </div>
-        </div>
-      {:else}
-        <button class="pill danger wide" onclick={() => (confirmPanic = true)}>Notaus: alle Sprecher-Mikros zu</button>
-      {/if}
-      {#if st.enabled}<p class="hint t-footnote">Die Automatik bleibt an, auch nach einem Neustart des PCs – bis jemand sie stoppt.</p>{/if}
+    <div class="segmented tabs" role="tablist" aria-label="Bereich">
+      <button role="tab" aria-selected={tab === "run"} class:sel={tab === "run"} onclick={() => setTab("run")}>Betrieb</button>
+      <button role="tab" aria-selected={tab === "setup"} class:sel={tab === "setup"} onclick={() => setTab("setup")}>Einrichtung{#if !complete}<span class="badge-dot" aria-label="unvollständig"></span>{/if}</button>
     </div>
 
-    <!-- Live detection per selected mic -->
-    {#if st.mics?.length}
-      <section>
-        <h3 class="section-title">Erkennung</h3>
-        <div class="group mics">
-          {#each st.mics as m}
-            <div class="mic" class:speaking={m.speaking} class:active={st.activeKey === m.key}>
-              <span class="mname">{m.label}</span>
-              <div class="mbar">
-                {#if m.level !== null}
-                  <div class="mfill" style="width: {Math.min(100, (m.level / 126) * 100)}%"></div>
-                  {@const mark = useMark(m)}
-                  {#if mark !== null}<div class="mfloor" style="left: {Math.min(100, (mark / 126) * 100)}%" title="Schwelle"></div>{/if}
-                {/if}
-              </div>
-              <span class="mstate">
-                {#if m.blocked}<em class="warn">Von Hand zu</em>
-                {:else if m.speaking && m.open}<em class="ok">Spricht</em>
-                {:else if m.speaking}<em class="warn">Spricht · zu</em>
-                {:else if m.closesIn !== null && m.closesIn <= cfg.closeAfter - 5}<em>Runter in {m.closesIn} s</em>
-                {:else if m.fader === null}<em>Fader zu</em>
-                {:else if !m.on}<em>Aus</em>
-                {:else}<em>Offen</em>{/if}
-              </span>
+    {#if tab === "run"}
+      <!-- Status -->
+      <div class="hero">
+        <div class="status {shown?.level ?? st.level}" aria-live="polite">
+          <span class="sdot"></span>
+          <div class="stext">
+            <b class="t-headline">{shown?.message ?? st.message}</b>
+            {#if st.event}<span class="event t-footnote"><Icon name="check" size={13} /> {st.event}</span>{/if}
+          </div>
+        </div>
+        <div class="health" aria-label="Zustand">
+          <span class="chip {store.connected ? 'good' : 'bad'}"><span class="dot2"></span>Pult</span>
+          <span class="chip {st.metersAvailable ? 'good' : 'bad'}"><span class="dot2"></span>Pegel</span>
+          <span class="chip {!cfg.roomMics.length ? 'neutral' : st.room.fresh ? 'good' : 'warn'}"><span class="dot2"></span>Raum-Mikros</span>
+          {#if danteHealth}<span class="chip {danteHealth}"><span class="dot2"></span>Dante</span>{/if}
+          {#if st.music}<span class="chip music"><Icon name="wave" size={13} />Musik</span>{/if}
+        </div>
+        {#if st.enabled}
+          <button class="pill wide cta" onclick={() => store.autoAction("stop")}><Icon name="stop" size={16} /> Automatik stoppen</button>
+        {:else}
+          <button class="pill wide cta" class:primary={missing.length === 0} onclick={() => store.autoAction("start")}><Icon name="play" size={16} /> Automatik starten</button>
+          {#if missing.length > 0}
+            <div class="todo">
+              <span class="todo-title"><Icon name="warning" size={15} /> Noch einzurichten</span>
+              <ul>{#each missing as m}<li>{m}</li>{/each}</ul>
+              <button class="pill" onclick={() => setTab("setup")}>Zur Einrichtung</button>
             </div>
-          {/each}
-        </div>
-        <p class="hint t-footnote">Pegel am Pult vor EQ und ON – so wird Sprache auch bei ausgeschaltetem Kanal erkannt. Ab dem Strich zählt es als „spricht“; den normalen Sprechpegel lernt QLMix pro Mikro.</p>
-      </section>
-    {/if}
-
-    <!-- 1 Room mics -->
-    <section>
-      <div class="stephead">
-        <h3 class="step"><span class="stepn">1</span>Raum-Mikrofone</h3>
-        {#if cfg.roomMics.length}<button class="pill" aria-expanded={editRoom} onclick={() => (editRoom = !editRoom)}>{editRoom ? "Fertig" : "Ändern"}</button>{/if}
-      </div>
-      <div class="chgrid">
-        {#each roomList as c}
-          {@const room = isRoom(c)}
-          <button class="ch" class:sel={room} aria-pressed={room} onclick={() => toggleRoom(c)}>
-            <span class="n">{channelLabel(c)}</span>
-            <b>{name(c)}</b>
-            {#if selected(c)}<span class="corr">Sprecher-Mikro</span>{/if}
-          </button>
-        {/each}
-      </div>
-      <div class="group roomlevel">
-        <div class="meter" aria-hidden="true">
-          <div class="bar" style="width: {pct(st.room.level)}%"></div>
-          {#if st.room.floor !== null}<div class="mark floor" style="left: {pct(st.room.floor)}%"></div>{/if}
-          {#if st.room.speech !== null}<div class="mark speech" style="left: {pct(st.room.speech)}%"></div>{/if}
-          {#if st.room.target !== null}<div class="mark target" style="left: {pct(st.room.target)}%"></div>{/if}
-        </div>
-        <dl class="legend num">
-          <div><dt>Jetzt</dt><dd>{fmt(st.room.level)}</dd></div>
-          <div><dt><i class="k speech"></i>Sprache</dt><dd>{fmt(st.room.speech)}</dd></div>
-          <div><dt><i class="k target"></i>Ziel</dt><dd>{fmt(st.room.target)}</dd></div>
-          <div><dt><i class="k floor"></i>Ruhe</dt><dd>{fmt(st.room.floor)}</dd></div>
-        </dl>
-        {#if st.feedback}<p class="err" role="alert"><Icon name="warning" size={15} /> Raum plötzlich viel zu laut – Pegel reduziert</p>{/if}
-      </div>
-      <p class="hint t-footnote">Die Mikros, die im Raum hängen, messen, wie laut es ankommt. Ihr Kanal darf aus sein und der Fader unten –
-        gemessen wird vor EQ und Fader. Mehrere werden gemittelt.</p>
-    </section>
-
-    <!-- 2 Target -->
-    <section>
-      <h3 class="step"><span class="stepn">2</span>Ziel-Lautstärke</h3>
-      <div class="group">
-        <button class="pill wide" class:primary={cfg.reference === null && st.room.speech !== null} onclick={() => store.autoAction("reference")}>So soll es klingen</button>
-        {#if store.autoError && store.autoErrorAction === "reference"}<p class="err" role="alert">{store.autoError}</p>{/if}
-        {#if store.autoOk}<p class="okmsg"><Icon name="check" size={15} /> {store.autoOk}</p>{/if}
-        <div class="ctrl">
-          <div class="lbl"><span>Leiser</span><b class="num">{val("offset") > 0 ? "+" : ""}{val("offset").toFixed(1)} dB</b><span>Lauter</span></div>
-          <input type="range" min="-10" max="10" step="0.5" value={val("offset")} aria-label="Ziel anpassen"
-            oninput={(e) => drag("offset", e)} onchange={(e) => commit("offset", e)} />
-        </div>
-      </div>
-      <p class="hint t-footnote">Drücken, während eine Person normal spricht und es im Raum gut klingt – das wird das Ziel für alle Sprecher-Mikros.
-        {#if cfg.reference !== null}Aktuell {cfg.reference.toFixed(1)} dB.{/if} Nach einer Gain-Änderung an den Raum-Mikros bitte neu festlegen.</p>
-    </section>
-
-    <!-- 3 Channels -->
-    <section>
-      <div class="stephead">
-        <h3 class="step"><span class="stepn">3</span>Sprecher-Mikrofone</h3>
-        {#if cfg.channels.length}<button class="pill" aria-expanded={editSpeakers} onclick={() => (editSpeakers = !editSpeakers)}>{editSpeakers ? "Fertig" : "Ändern"}</button>{/if}
-      </div>
-      <div class="chgrid">
-        {#each speakerList as c}
-          {@const sel = selected(c)}
-          {@const learned = cfg.learned[`${c.kind}:${c.index}`]}
-          {@const limit = cfg.limits?.[`${c.kind}:${c.index}`]}
-          <button class="ch" class:sel class:active={st.activeKey === `${c.kind}:${c.index}`} aria-pressed={sel} onclick={() => toggleChannel(c)}>
-            <span class="n">{channelLabel(c)}</span>
-            <b>{name(c)}</b>
-            {#if sel && learned !== undefined}<span class="corr num">gemerkt {dbText(learned / 100)}</span>{/if}
-            {#if sel && limit !== undefined}<span class="corr warn num">Pfeifgrenze {dbText(limit / 100)}</span>{/if}
-            {#if sel && !cfg.profiles?.[`${c.kind}:${c.index}`]?.sum}<span class="corr">lernt noch</span>{/if}
-            {#if isRoom(c)}<span class="corr">Raum-Mikro</span>{/if}
-          </button>
-        {/each}
-      </div>
-      {#if cfg.channels.length}
-        <div class="group hpf">
-          {#if confirmHpf}
-            <p class="t-callout">Bei allen {cfg.channels.length} Sprecher-Mikros den <b>Hochpass auf 100 Hz</b> einschalten? Die bisherige Hochpass-Einstellung dieser Kanäle wird überschrieben.</p>
-            <div class="row">
-              <button class="pill" onclick={() => (confirmHpf = false)}>Abbrechen</button>
-              <button class="pill primary" onclick={setHpf}>Hochpass setzen</button>
-            </div>
-          {:else}
-            <button class="pill wide" onclick={() => { confirmHpf = true; hpfDone = null; }} disabled={!store.eqSchema || !store.connected}>Hochpass 100 Hz für Sprecher-Mikros</button>
-            {#if hpfDone !== null}<p class="okmsg"><Icon name="check" size={15} /> Hochpass bei {hpfDone} Mikros auf 100 Hz gesetzt.</p>{/if}
-            <p class="t-footnote">Filtert Trittschall, Poltern und Brummen weg: Sprache klingt klarer und es pfeift später. Einmal drücken genügt.</p>
           {/if}
-        </div>
-      {/if}
-      <p class="hint t-footnote">Nur diese Kanäle darf die Automatik einschalten und bewegen (z. B. Kanzel, Rednerpult, Funkmikros) – keine Instrumente oder Gesang.
-        Die Automatik merkt sich pro Mikro, bei welcher Faderstellung die Lautstärke gepasst hat.</p>
-    </section>
-
-    <!-- 4 Rules -->
-    <section>
-      <h3 class="step"><span class="stepn">4</span>Regeln</h3>
-      <div class="group">
-        <div class="ctrl">
-          <div class="lbl"><span>Erstes Öffnen auf</span><b class="num">{dbText(val("startLevel"))}</b></div>
-          <input type="range" min="-30" max="5" step="1" value={val("startLevel")} aria-label="Faderstellung beim ersten Öffnen" oninput={(e) => drag("startLevel", e)} onchange={(e) => commit("startLevel", e)} />
-        </div>
-        <div class="ctrl">
-          <div class="lbl"><span>Fader nie unter</span><b class="num">{dbText(val("minLevel"))}</b></div>
-          <input type="range" min="-40" max="-5" step="1" value={val("minLevel")} aria-label="Fader-Untergrenze" oninput={(e) => drag("minLevel", e)} onchange={(e) => commit("minLevel", e)} />
-        </div>
-        <div class="ctrl">
-          <div class="lbl"><span>Fader nie über</span><b class="num">{dbText(val("ceiling"))}</b></div>
-          <input type="range" min="-10" max="10" step="1" value={val("ceiling")} aria-label="Fader-Obergrenze" oninput={(e) => drag("ceiling", e)} onchange={(e) => commit("ceiling", e)} />
-        </div>
-        <div class="ctrl">
-          <div class="lbl"><span>Fader runter, wenn niemand spricht, nach</span></div>
-          <div class="segmented" role="radiogroup" aria-label="Fader runter nach Stille">
-            {#each closeTimes as t}
-              <button role="radio" aria-checked={cfg.closeAfter === t} class:sel={cfg.closeAfter === t} onclick={() => store.autoAction("config", { closeAfter: t })}>{t < 60 ? `${t} s` : `${t / 60} min`}</button>
-            {/each}
-          </div>
-        </div>
-        <div class="ctrl">
-          <div class="lbl"><span>Empfindlichkeit beim Öffnen</span></div>
-          <div class="segmented" role="radiogroup" aria-label="Empfindlichkeit">
-            {#each sensitivities as o}
-              <button role="radio" aria-checked={cfg.sensitivity === o.v} class:sel={cfg.sensitivity === o.v} onclick={() => store.autoAction("config", { sensitivity: o.v })}>{o.l}</button>
-            {/each}
-          </div>
-        </div>
-        <div class="ctrl">
-          <div class="lbl"><span>Nachregeln während der Rede</span></div>
-          <div class="segmented" role="radiogroup" aria-label="Nachregeln">
-            {#each speeds as s}
-              <button role="radio" aria-checked={cfg.speed === s.v} class:sel={cfg.speed === s.v} onclick={() => store.autoAction("config", { speed: s.v })}>{s.l}</button>
-            {/each}
-          </div>
-        </div>
-        {#if Object.keys(cfg.learned).length > 0}
-          <button class="pill" onclick={() => store.autoAction("forget")}>Gelerntes vergessen (Stellungen, Sprechpegel)</button>
         {/if}
-        {#if Object.keys(cfg.limits ?? {}).length > 0}
-          <button class="pill" onclick={() => store.autoAction("forgetLimits")}>Pfeifgrenzen zurücksetzen</button>
-        {/if}
+        {#if store.autoError && store.autoErrorAction !== "reference"}<p class="err" role="alert">{store.autoError}</p>{/if}
       </div>
-    </section>
 
-    <!-- 5 Music -->
-    <section>
-      <div class="stephead">
-        <h3 class="step"><span class="stepn">5</span>Musik-Erkennung</h3>
-        <button class="pill" aria-expanded={editMusic} onclick={() => (editMusic = !editMusic)}>{editMusic ? "Fertig" : "Ändern"}</button>
-      </div>
-      <div class="group">
-        <p class="t-callout">{st.music ? `Musik erkannt${st.musicSources.length ? `: ${st.musicSources.join(", ")}` : ""}` : "Gerade keine Musik."}</p>
-        {#if editMusic || musicList.length}
-          <span class="t-footnote">{editMusic ? "Antippen: Kanal zählt nie als Musik" : "Zählen nie als Musik:"}</span>
-          <div class="chgrid">
-            {#each musicList as c}
-              {@const ign = isIgnored(c)}
-              <button class="ch" class:sel={ign} aria-pressed={ign} onclick={() => toggleIgnore(c)}>
-                <span class="n">{channelLabel(c)}</span>
-                <b>{name(c)}</b>
-              </button>
-            {/each}
-          </div>
-        {/if}
-      </div>
-      <p class="hint t-footnote">Alle anderen Eingänge – Instrumente, Chor, Zuspieler – zählen als Musik. Läuft Musik, öffnet die Automatik nur ein Mikro, in das jemand direkt singt oder spricht, und regelt nicht nach.
-        Ein Mikro, in das gesprochen wird, das aber kein Sprecher-Mikro ist, hier ausnehmen.</p>
-    </section>
-
-    <!-- 6 Dante -->
-    <section>
-      <h3 class="step"><span class="stepn">6</span>Dante-Ton und Pfeifschutz</h3>
-      <div class="group">
-        <p class="t-callout" class:warnmsg={dante && !dante.useful}>{dante?.message || "Warte auf den Server …"}</p>
-        {#if danteLive.length}
-          <div class="dchans">
-            {#each danteLive as ch (ch.id)}
-              <div class="dch">
-                <div class="dtop">
-                  <span class="dname"><b class="num">DVS {ch.num ?? ch.ch}</b>{ch.rxName ? ` · ${ch.rxName}` : ""}</span>
-                  <div class="mbar"><div class="mfill" class:live={(ch.level ?? -120) > -80} style="width: {Math.max(0, Math.min(100, ((ch.level ?? -120) + 90) / 90 * 100))}%"></div></div>
+      <!-- Who talks -->
+      {#if st.mics?.length}
+        <section>
+          <h3 class="section-title">Sprecher-Mikros</h3>
+          <div class="group mics">
+            {#each st.mics as m}
+              <div class="mic" class:speaking={m.speaking} class:active={st.activeKey === m.key}>
+                <span class="mname">{m.label}</span>
+                <div class="mbar">
+                  {#if m.level !== null}
+                    <div class="mfill" style="width: {Math.min(100, (m.level / 126) * 100)}%"></div>
+                    {@const mark = useMark(m)}
+                    {#if mark !== null}<div class="mfloor" style="left: {Math.min(100, (mark / 126) * 100)}%" title="Schwelle"></div>{/if}
+                  {/if}
                 </div>
-                <span class="dinfo" class:good={ch.relevant}>{ch.source ? (ch.connected ? `← ${ch.source}` : `${ch.source} nicht erreichbar`) : ch.match ?? ((ch.level ?? -120) > -80 ? `${Math.round(ch.level!)} dB` : "kein Ton")}</span>
+                <span class="mstate">
+                  {#if m.blocked}<em class="warn">Von Hand zu</em>
+                  {:else if m.speaking && m.open}<em class="ok">Spricht</em>
+                  {:else if m.speaking}<em class="warn">Spricht · zu</em>
+                  {:else if m.closesIn !== null && m.closesIn <= cfg.closeAfter - 5}<em>Runter in {m.closesIn} s</em>
+                  {:else if m.fader === null}<em>Fader zu</em>
+                  {:else if !m.on}<em>Aus</em>
+                  {:else}<em>Offen</em>{/if}
+                </span>
               </div>
             {/each}
           </div>
-        {/if}
-        {#if danteSilent > 0}<p class="t-footnote">{danteSilent} weitere Dante-Kanäle ohne Ton.</p>{/if}
-        {#if dante && dante.state === "running"}
-          {#if router?.routes.length}
-            <ul class="notches">
-              {#each router.routes as r (r.rx)}<li><b>{r.label}</b><span class="num">Dante-Kanal {r.rx}</span></li>{/each}
-            </ul>
-          {/if}
-          {#if !dante.useful || routing}
-            <button class="pill primary wide" onclick={() => store.autoAction("danteRoute")} disabled={routing || !cfg.roomMics.length}>
-              {routing ? "Suche das Raum-Mikro …" : "Raum-Mikro automatisch zuweisen"}
-            </button>
-          {/if}
-          {#if router?.message}<p class="t-footnote" class:warnmsg={router.state === "error"} class:okmsg={router.state === "done"}>{router.message}</p>{/if}
-          {#if !dante.useful && !routing && !router?.message}
-            <p class="t-footnote">QLMix legt die Raum-Mikros selbst auf freie Kanäle der Dante-Soundkarte dieses PCs. Am Pult und an anderen Geräten ändert sich nichts. Während der Suche (bis zu ein paar Minuten) bitte normal in ein Mikro sprechen.</p>
-          {/if}
-          {#if router?.routes.length && !routing}
-            <button class="pill" onclick={() => store.autoAction("danteUnroute")}>Zuweisung wieder entfernen</button>
-          {/if}
-        {/if}
-        <button class="pill" class:lit={cfg.notchesEnabled} aria-pressed={cfg.notchesEnabled}
-          onclick={() => store.autoAction("config", { notchesEnabled: !cfg.notchesEnabled })}>EQ-Kerben gegen Pfeifen {cfg.notchesEnabled ? "an" : "aus"}</button>
-        {#if notchList.length}
-          <ul class="notches">
-            {#each notchList as n (n.key)}<li><b>{n.label}</b><span class="num">{n.text}</span></li>{/each}
-          </ul>
-          <button class="pill" onclick={() => store.autoAction("clearNotches")}>Kerben entfernen (EQ wie vorher)</button>
-        {/if}
-      </div>
-      <p class="hint t-footnote">QLMix liest den Ton der Dante Virtual Soundcard auf diesem PC mit und erkennt Pfeifen am Ton.
-        Dann setzt es im EQ des offenen Sprecher-Mikros eine schmale Kerbe – nur in einem freien Band (0 dB), dein EQ bleibt unangetastet.
-        Ist kein Band frei, wird wie bisher der Fader zurückgenommen. Neben jedem Dante-Kanal steht, was er trägt (Pult-Kanal oder Mix). Am besten wirkt der Pfeifschutz, wenn ein Mix oder Raum-Mikro dabei ist – dort ist Pfeifen zu hören.</p>
-    </section>
+        </section>
+      {/if}
 
-    <!-- History -->
-    {#if st.history?.length}
+      <!-- Feedback protection -->
       <section>
-        <h3 class="section-title">Verlauf</h3>
-        <ol class="group history">
-          {#each st.history.slice(0, 15) as h}
-            <li><span class="num htime">{time(h.t)}</span><span>{h.text}</span></li>
+        <h3 class="section-title">Pfeifschutz</h3>
+        <div class="group">
+          <Switch checked={cfg.notchesEnabled} label="EQ-Kerben gegen Pfeifen"
+            detail={dante?.useful ? "Hört über Dante mit – setzt eine schmale Kerbe auf die Pfeif-Frequenz." : "Ohne passenden Dante-Ton wird bei Pfeifen der Fader zurückgenommen."}
+            onchange={(v) => store.autoAction("config", { notchesEnabled: v })} />
+          {#if notchList.length}
+            <ul class="notches">
+              {#each notchList as n (n.key)}<li><b>{n.label}</b><span class="num">{n.text}</span></li>{/each}
+            </ul>
+            <button class="pill" onclick={() => store.autoAction("clearNotches")}>Kerben entfernen (EQ wie vorher)</button>
+          {/if}
+        </div>
+      </section>
+
+      <!-- History -->
+      {#if st.history?.length}
+        <section>
+          <h3 class="section-title">Verlauf</h3>
+          <ol class="group history">
+            {#each st.history.slice(0, 10) as h}
+              <li><span class="num htime">{time(h.t)}</span><span>{h.text}</span></li>
+            {/each}
+          </ol>
+        </section>
+      {/if}
+
+      <!-- Emergency stop: always reachable, but not the loudest element -->
+      <section>
+        {#if confirmPanic}
+          <div class="confirm" role="alert">
+            <p class="t-callout">Automatik stoppen und <b>alle Sprecher-Mikros zuziehen</b>?</p>
+            <div class="row">
+              <button class="pill" onclick={() => (confirmPanic = false)}>Abbrechen</button>
+              <button class="pill danger" onclick={() => { store.autoAction("panic"); confirmPanic = false; }}>Alle zu</button>
+            </div>
+          </div>
+        {:else}
+          <button class="pill wide panic" onclick={() => (confirmPanic = true)}><Icon name="warning" size={15} /> Notaus: alle Sprecher-Mikros zu</button>
+        {/if}
+        <p class="hint t-footnote">{st.enabled ? "Die Automatik bleibt an, auch nach einem Neustart des PCs." : "Die Automatik ist aus."}</p>
+        <details class="more">
+          <summary>So arbeitet die Automatik</summary>
+          <p>Spricht jemand deutlich in ein Sprecher-Mikro, schaltet sie es ein und zieht den Fader auf die gemerkte Stellung. Bei einem neuen Sprecher stellt sie einmal ein und hält den Fader dann ruhig; nur wenn jemand länger deutlich lauter oder leiser spricht, gleicht sie langsam an. Spricht in ein Mikro länger niemand, geht sein Fader runter.</p>
+          <p>Bewegst du einen Fader selbst, merkt sie sich die Stellung. Schaltest du ein Mikro aus, während jemand hineinspricht, bleibt es aus. Bei Musik öffnet sie nur ein Mikro, in das jemand direkt singt oder spricht.</p>
+        </details>
+      </section>
+    {:else}
+      <!-- 1 Room mics -->
+      <section>
+        <div class="stephead">
+          <h3 class="step"><span class="stepn">1</span>Raum-Mikrofone</h3>
+          {#if cfg.roomMics.length}<button class="pill" aria-expanded={editRoom} onclick={() => (editRoom = !editRoom)}>{editRoom ? "Fertig" : "Ändern"}</button>{/if}
+        </div>
+        <div class="chgrid">
+          {#each roomList as c}
+            {@const room = isRoom(c)}
+            <button class="ch" class:sel={room} aria-pressed={room} onclick={() => toggleRoom(c)}>
+              <span class="n">{channelLabel(c)}</span>
+              <b>{name(c)}</b>
+              {#if selected(c)}<span class="corr">Sprecher-Mikro</span>{/if}
+            </button>
           {/each}
-        </ol>
+        </div>
+        <div class="group roomlevel">
+          <div class="meter" aria-hidden="true">
+            <div class="bar" style="width: {pct(st.room.level)}%"></div>
+            {#if st.room.floor !== null}<div class="mark floor" style="left: {pct(st.room.floor)}%"></div>{/if}
+            {#if st.room.speech !== null}<div class="mark speech" style="left: {pct(st.room.speech)}%"></div>{/if}
+            {#if st.room.target !== null}<div class="mark target" style="left: {pct(st.room.target)}%"></div>{/if}
+          </div>
+          <dl class="legend num">
+            <div><dt>Jetzt</dt><dd>{fmt(st.room.level)}</dd></div>
+            <div><dt><i class="k speech"></i>Sprache</dt><dd>{fmt(st.room.speech)}</dd></div>
+            <div><dt><i class="k target"></i>Ziel</dt><dd>{fmt(st.room.target)}</dd></div>
+            <div><dt><i class="k floor"></i>Ruhe</dt><dd>{fmt(st.room.floor)}</dd></div>
+          </dl>
+        </div>
+        <p class="hint t-footnote">Die Mikros, die im Raum hängen. Ihr Kanal darf aus sein.</p>
+      </section>
+
+      <!-- 2 Target -->
+      <section>
+        <h3 class="step"><span class="stepn">2</span>Ziel-Lautstärke</h3>
+        <div class="group">
+          <button class="pill wide" class:primary={cfg.reference === null && st.room.speech !== null} onclick={() => store.autoAction("reference")}>So soll es klingen</button>
+          {#if store.autoError && store.autoErrorAction === "reference"}<p class="err" role="alert">{store.autoError}</p>{/if}
+          {#if store.autoOk}<p class="okmsg"><Icon name="check" size={15} /> {store.autoOk}</p>{/if}
+          <div class="ctrl">
+            <div class="lbl"><span>Leiser</span><b class="num">{dbText(val("offset"))}</b><span>Lauter</span></div>
+            <input type="range" min="-10" max="10" step="0.5" value={val("offset")} aria-label="Ziel anpassen"
+              oninput={(e) => drag("offset", e)} onchange={(e) => commit("offset", e)} />
+          </div>
+        </div>
+        <p class="hint t-footnote">Drücken, während jemand normal spricht und es gut klingt. {#if cfg.reference !== null}Aktuell {fmt(cfg.reference)}.{/if}</p>
+      </section>
+
+      <!-- 3 Speaker mics -->
+      <section>
+        <div class="stephead">
+          <h3 class="step"><span class="stepn">3</span>Sprecher-Mikrofone</h3>
+          {#if cfg.channels.length}<button class="pill" aria-expanded={editSpeakers} onclick={() => (editSpeakers = !editSpeakers)}>{editSpeakers ? "Fertig" : "Ändern"}</button>{/if}
+        </div>
+        <div class="chgrid">
+          {#each speakerList as c}
+            {@const sel = selected(c)}
+            {@const learned = cfg.learned[`${c.kind}:${c.index}`]}
+            {@const limit = cfg.limits?.[`${c.kind}:${c.index}`]}
+            {@const live = st.activeKey === `${c.kind}:${c.index}`}
+            <button class="ch" class:sel aria-pressed={sel} onclick={() => toggleChannel(c)}>
+              <span class="n">{channelLabel(c)}{#if live}<span class="livedot" aria-label="spricht"></span>{/if}</span>
+              <b>{name(c)}</b>
+              {#if sel && learned !== undefined}<span class="corr num">gemerkt {dbText(learned / 100)}</span>{/if}
+              {#if sel && limit !== undefined}<span class="corr warn num">Pfeifgrenze {dbText(limit / 100)}</span>{/if}
+              {#if sel && !cfg.profiles?.[`${c.kind}:${c.index}`]?.sum}<span class="corr">lernt noch</span>{/if}
+              {#if isRoom(c)}<span class="corr">Raum-Mikro</span>{/if}
+            </button>
+          {/each}
+        </div>
+        {#if cfg.channels.length}
+          <div class="group hpf">
+            {#if confirmHpf}
+              <p class="t-callout">Bei allen {cfg.channels.length} Sprecher-Mikros den <b>Hochpass auf 100 Hz</b> einschalten? Die bisherige Hochpass-Einstellung wird überschrieben.</p>
+              <div class="row">
+                <button class="pill" onclick={() => (confirmHpf = false)}>Abbrechen</button>
+                <button class="pill primary" onclick={setHpf}>Hochpass setzen</button>
+              </div>
+            {:else}
+              <button class="pill wide" onclick={() => { confirmHpf = true; hpfDone = null; }} disabled={!store.eqSchema || !store.connected}>Hochpass 100 Hz für Sprecher-Mikros</button>
+              {#if hpfDone !== null}<p class="okmsg"><Icon name="check" size={15} /> Hochpass bei {hpfDone} Mikros auf 100 Hz gesetzt.</p>{/if}
+            {/if}
+          </div>
+        {/if}
+        <p class="hint t-footnote">Nur diese Kanäle schaltet und bewegt die Automatik – keine Instrumente oder Gesang.</p>
+      </section>
+
+      <!-- 4 Rules -->
+      <section>
+        <h3 class="step"><span class="stepn">4</span>Regeln</h3>
+        <div class="group">
+          <div class="ctrl">
+            <div class="lbl"><span>Erstes Öffnen auf</span><b class="num">{dbText(val("startLevel"))}</b></div>
+            <input type="range" min="-30" max="5" step="1" value={val("startLevel")} aria-label="Faderstellung beim ersten Öffnen" oninput={(e) => drag("startLevel", e)} onchange={(e) => commit("startLevel", e)} />
+          </div>
+          <div class="ctrl">
+            <div class="lbl"><span>Fader nie unter</span><b class="num">{dbText(val("minLevel"))}</b></div>
+            <input type="range" min="-40" max="-5" step="1" value={val("minLevel")} aria-label="Fader-Untergrenze" oninput={(e) => drag("minLevel", e)} onchange={(e) => commit("minLevel", e)} />
+          </div>
+          <div class="ctrl">
+            <div class="lbl"><span>Fader nie über</span><b class="num">{dbText(val("ceiling"))}</b></div>
+            <input type="range" min="-10" max="10" step="1" value={val("ceiling")} aria-label="Fader-Obergrenze" oninput={(e) => drag("ceiling", e)} onchange={(e) => commit("ceiling", e)} />
+          </div>
+          <div class="ctrl">
+            <div class="lbl"><span>Fader runter, wenn niemand spricht, nach</span></div>
+            <div class="segmented" role="radiogroup" aria-label="Fader runter nach Stille">
+              {#each closeTimes as t}
+                <button role="radio" aria-checked={cfg.closeAfter === t} class:sel={cfg.closeAfter === t} onclick={() => store.autoAction("config", { closeAfter: t })}>{t < 60 ? `${t} s` : `${t / 60} min`}</button>
+              {/each}
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="lbl"><span>Empfindlichkeit beim Öffnen</span></div>
+            <div class="segmented" role="radiogroup" aria-label="Empfindlichkeit">
+              {#each sensitivities as o}
+                <button role="radio" aria-checked={cfg.sensitivity === o.v} class:sel={cfg.sensitivity === o.v} onclick={() => store.autoAction("config", { sensitivity: o.v })}>{o.l}</button>
+              {/each}
+            </div>
+          </div>
+          <div class="ctrl">
+            <div class="lbl"><span>Nachregeln während der Rede</span></div>
+            <div class="segmented" role="radiogroup" aria-label="Nachregeln">
+              {#each speeds as s}
+                <button role="radio" aria-checked={cfg.speed === s.v} class:sel={cfg.speed === s.v} onclick={() => store.autoAction("config", { speed: s.v })}>{s.l}</button>
+              {/each}
+            </div>
+          </div>
+          {#if Object.keys(cfg.learned).length > 0}
+            <button class="pill" onclick={() => store.autoAction("forget")}>Gelerntes vergessen (Stellungen, Sprechpegel)</button>
+          {/if}
+          {#if Object.keys(cfg.limits ?? {}).length > 0}
+            <button class="pill" onclick={() => store.autoAction("forgetLimits")}>Pfeifgrenzen zurücksetzen</button>
+          {/if}
+        </div>
+      </section>
+
+      <!-- 5 Music -->
+      <section>
+        <div class="stephead">
+          <h3 class="step"><span class="stepn">5</span>Musik-Erkennung</h3>
+          <button class="pill" aria-expanded={editMusic} onclick={() => (editMusic = !editMusic)}>{editMusic ? "Fertig" : "Ändern"}</button>
+        </div>
+        <div class="group">
+          <p class="t-callout">{st.music ? `Musik erkannt${st.musicSources.length ? `: ${st.musicSources.join(", ")}` : ""}` : "Gerade keine Musik."}</p>
+          {#if editMusic || musicList.length}
+            <span class="t-footnote">{editMusic ? "Antippen: Kanal zählt nie als Musik" : "Zählen nie als Musik:"}</span>
+            <div class="chgrid">
+              {#each musicList as c}
+                {@const ign = isIgnored(c)}
+                <button class="ch" class:sel={ign} aria-pressed={ign} onclick={() => toggleIgnore(c)}>
+                  <span class="n">{channelLabel(c)}</span>
+                  <b>{name(c)}</b>
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </div>
+        <p class="hint t-footnote">Alle übrigen Eingänge zählen als Musik. Ein Mikro, in das gesprochen wird, hier ausnehmen.</p>
+      </section>
+
+      <!-- 6 Dante -->
+      <section>
+        <h3 class="step"><span class="stepn">6</span>Dante-Ton</h3>
+        <div class="group">
+          <p class="t-callout" class:warnmsg={danteHealth === "warn"}>{dante?.message || "Warte auf den Server …"}</p>
+          {#if danteLive.length}
+            <div class="dchans">
+              {#each danteLive as ch (ch.id)}
+                <div class="dch">
+                  <div class="dtop">
+                    <span class="dname"><b class="num">DVS {ch.num ?? ch.ch}</b>{ch.rxName ? ` · ${ch.rxName}` : ""}</span>
+                    <div class="mbar"><div class="mfill" class:live={(ch.level ?? -120) > -80} style="width: {Math.max(0, Math.min(100, ((ch.level ?? -120) + 90) / 90 * 100))}%"></div></div>
+                  </div>
+                  <span class="dinfo" class:good={ch.relevant}>{ch.source ? (ch.connected ? `← ${ch.source}` : `${ch.source} nicht erreichbar`) : ch.match ?? ((ch.level ?? -120) > -80 ? `${Math.round(ch.level!)} dB` : "kein Ton")}</span>
+                </div>
+              {/each}
+            </div>
+          {/if}
+          {#if danteSilent > 0}<p class="t-footnote">{danteSilent} weitere Dante-Kanäle ohne Ton.</p>{/if}
+          {#if dante && dante.state === "running"}
+            {#if router?.routes.length}
+              <ul class="notches">
+                {#each router.routes as r (r.rx)}<li><b>{r.label}</b><span class="num">Dante-Kanal {r.rx}</span></li>{/each}
+              </ul>
+            {/if}
+            {#if !dante.useful || routing}
+              <button class="pill primary wide" onclick={() => store.autoAction("danteRoute")} disabled={routing || !cfg.roomMics.length}>
+                {routing ? "Suche das Raum-Mikro …" : "Raum-Mikro automatisch zuweisen"}
+              </button>
+            {/if}
+            {#if router?.message}<p class="t-footnote" class:warnmsg={router.state === "error"} class:okmsg={router.state === "done"}>{router.message}</p>{/if}
+            {#if router?.routes.length && !routing}
+              <button class="pill" onclick={() => store.autoAction("danteUnroute")}>Zuweisung wieder entfernen</button>
+            {/if}
+          {/if}
+        </div>
+        <details class="more">
+          <summary>Wie funktioniert der Pfeifschutz über Dante?</summary>
+          <p>QLMix hört den Ton der Dante-Soundkarte dieses PCs mit. Kanäle, die vom Pult kommen (z. B. der Stream-Mix), nutzt es für den Pfeifschutz: Erkennt es ein anschwellendes Pfeifen, setzt es im EQ des offenen Sprecher-Mikros eine schmale Kerbe – nur in einem freien Band (0 dB).</p>
+          <p>Liegt kein passender Kanal auf der Soundkarte, legt „Raum-Mikro automatisch zuweisen“ ein Raum-Mikro auf einen freien Kanal. Am Pult und an anderen Geräten ändert sich nichts; während der Suche bitte in ein Mikro sprechen.</p>
+        </details>
       </section>
     {/if}
-
-    <p class="t-footnote">Spricht jemand deutlich in ein ausgewähltes Mikro, schaltet die Automatik es ein und zieht den Fader sofort auf die gemerkte Stellung.
-      Bei einem neuen Sprecher stellt sie einmal ein und hält den Fader dann ruhig; nur wenn jemand länger deutlich lauter oder leiser spricht, gleicht sie langsam an.
-      Spricht in ein Mikro länger niemand, geht sein Fader ganz runter.
-      Bewegst du einen Fader selbst, merkt sie sich die Stellung und macht nach 5 Sekunden weiter. Schaltest du ein Mikro aus, während jemand hineinspricht, bleibt es aus.
-      Pfeift es, nimmt sie das Mikro sofort 6 dB zurück und merkt sich eine Pfeifgrenze, über die es nicht mehr geht.</p>
   {/if}
 </Sheet>
 
 <style>
+  .tabs { margin-bottom: var(--s1); }
+  .tabs button { position: relative; }
+  .badge-dot { display: inline-block; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; background: var(--warn); vertical-align: 2px; }
+  .chip.bad .dot2 { background: var(--danger); }
+  .chip.warn .dot2 { background: var(--warn); }
+  .chip.neutral .dot2 { background: var(--label-3); }
+  .chip.bad, .chip.warn { color: var(--label); }
+  .panic { color: var(--danger-text); background: var(--surface-1); box-shadow: inset 0 0 0 1px rgba(255, 69, 58, 0.35); }
+  .panic:hover { background: rgba(255, 69, 58, 0.1); }
+  .todo .pill { margin-top: var(--s2); }
+  .livedot { display: inline-block; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; background: var(--on); box-shadow: 0 0 0 3px rgba(48, 209, 88, 0.2); vertical-align: 1px; }
+  .more { padding: var(--s2) var(--s1) 0; font-size: var(--fs-footnote); color: var(--label-2); }
+  .more summary { cursor: pointer; color: var(--accent-text); font-weight: 600; min-height: 28px; display: flex; align-items: center; }
+  .more p { margin: var(--s2) 0 0; line-height: 18px; }
+
   .hero { display: flex; flex-direction: column; gap: var(--s3); }
   .status { display: flex; gap: var(--s3); align-items: flex-start; }
   .stext { display: flex; flex-direction: column; gap: 2px; }
@@ -447,7 +518,7 @@
     background: var(--surface-2); color: var(--label-2);
     font-size: var(--fs-footnote); font-weight: 600;
   }
-  .chip .dot2 { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }
+  .chip .dot2 { width: 8px; height: 8px; border-radius: 50%; background: var(--label-3); }
   .chip.good { color: var(--label); }
   .chip.good .dot2 { background: var(--on); }
   .chip.music { color: var(--info); }
@@ -509,7 +580,7 @@
 
   .stephead { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); margin-bottom: var(--s3); }
   .stephead .step { margin-bottom: 0; }
-  .chgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: var(--s2); }
+  .chgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: var(--s2); }
   .ch {
     display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
     min-height: 56px; padding: var(--s2) var(--s3);
@@ -523,7 +594,6 @@
   .ch b { font-size: var(--fs-footnote); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
   .ch.sel { background: rgba(0, 113, 227, 0.18); box-shadow: inset 0 0 0 1.5px var(--accent-text); }
   .ch.sel .n { color: var(--accent-text); }
-  .ch.active { box-shadow: inset 0 0 0 1.5px var(--accent-text), 0 0 0 3px rgba(48, 209, 88, 0.55); }
   .ch .corr.warn { color: var(--warn); }
   .ch .corr { font-size: var(--fs-caption); color: var(--label-2); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 

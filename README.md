@@ -23,6 +23,9 @@ des Pults; bedient wird **im Browser** auf jedem Handy, Tablet oder Computer.
   öffnet nicht mehr bei Schritten oder Gemeindegesang, regelt ruhig statt ständig, Verlauf und Notaus für die Fernbedienung
 * **Neu in 1.8**: Raum-Automatik verstärkt nicht mehr zu stark (begrenztes Nachjustieren, Wirkungskontrolle, höchstens
   +6 dB für leise Sprecher, Obergrenze 0 dB), Verlauf mit Begründung, Knopf „Hochpass 100 Hz für Sprecher-Mikros“
+* **Neu in 1.11**: Raum-Automatik übersichtlich in **Betrieb** (alles für den Gottesdienst auf einen Blick) und
+  **Einrichtung** getrennt, auf iPad/Computer neben dem Mischpult angedockt, ruhige Statuszeile, Schalter statt Knöpfen,
+  ruhigeres Mischpult (Fader-Skala nur am ersten Kanalzug)
 * **Neu in 1.10**: QLMix liest selbst, was auf der Dante-Soundkarte liegt (Namen und Quellen), nutzt Pult-Ausgänge wie den
   Stream-Mix sofort für den Pfeifschutz und kann ein Raum-Mikro per Knopf selbst auf einen freien Dante-Kanal legen
 * **Neu in 1.9**: Pfeifschutz über Dante – QLMix hört den Ton der Dante Virtual Soundcard mit, erkennt Pfeifen am Ton und
@@ -137,9 +140,13 @@ Die Raum-Automatik läuft **ohne Techniker**: einmal einrichten, dann ein Knopf.
 Sprecher-Mikro auf- und zugeht und wie laut es ist – auch wenn niemand am Pult steht (Bedienung von zu Hause über
 euer VPN). Für alle Sprecher-Mikros gilt **eine** Ziel-Lautstärke im Raum.
 
+Das Fenster hat zwei Bereiche: **Betrieb** zeigt im Alltag alles auf einen Blick – Zustand, Start/Stopp, welche
+Sprecher-Mikros gerade sprechen, Pfeifschutz, Verlauf und Notaus. **Einrichtung** enthält die Schritte 1–6 unten. Auf
+iPad und Computer steht die Automatik neben dem Mischpult, so siehst du die Fader live.
+
 ### Einmal einrichten
 
-1. Oben auf **Auto** tippen.
+1. Oben auf **Auto** tippen, dann **Einrichtung**.
 2. **1 Raum-Mikrofone:** die Kanäle der Mikros antippen, die im Raum hängen (eins oder mehrere). Ihr Kanal darf aus
    sein und der Fader unten, gemessen wird vor EQ und Fader.
 3. **2 Ziel-Lautstärke:** Während jemand **normal spricht** und es gut klingt: **„So soll es klingen“**.
