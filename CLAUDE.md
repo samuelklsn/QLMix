@@ -27,7 +27,7 @@
 - **Mac-App** (Swift, `Sources/QLMix`): der erste Prototyp. Sie kann kein EQ über RCP, weil das Pult EQ nicht über RCP anbietet.
   - TODO: klären, ob die Mac-App noch weiterentwickelt werden soll. Seit der Web-Version wurde sie nicht mehr angefasst.
 - **Repo:** https://github.com/samuelklsn/QLMix (öffentlich, Branch `main`)
-  - Aktuelle Version **1.9.0**, Releases als GitHub-Release mit Tag `vX.Y.Z`.
+  - Aktuelle Version **1.9.1**, Releases als GitHub-Release mit Tag `vX.Y.Z`.
 
 ## Tech-Stack
 

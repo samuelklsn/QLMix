@@ -1,6 +1,6 @@
 # STATUS – QLMix
 
-Stand: 2026-11-15 · Version **1.9.0** veröffentlicht (Release `v1.9.0`)
+Stand: 2026-11-15 · Version **1.9.1** veröffentlicht (Release `v1.9.1`)
 
 ## Fertig
 
@@ -102,7 +102,8 @@ Stand: 2026-11-15 · Version **1.9.0** veröffentlicht (Release `v1.9.0`)
 
 ## In Arbeit
 
-- 1.9.0 einspielen. Screenshot von „6 Dante-Ton“ am Windows-PC anfordern.
+- 1.9.1 (veröffentlicht): Ergebnis vom Windows-PC (Screenshot 2026-11-15): Dante-Lesen klappt – die DVS erscheint als 8 Stereo-Geräte „DVS Receive 1-2 … 15-16“ (16 Kanäle), 4 Kanäle mit Ton, zugeordnet zu ST IN 7 „Sampler“. Fix: Anzeige „DVS 5“ statt „Kanal 1“, stille Kanäle zusammengefasst; Zuordnung prüft jetzt auch MIX/MTX (ein Mix gewinnt, wenn er so gut passt wie seine einzelne Quelle).
+- Offen: Was liegt auf DVS 5–8? Wenn ein Mix (Livestream/Aufnahme) mit den Sprecher-Mikros → Pfeifschutz über Dante wirkt. Wenn nur der Sampler → wirkungslos; dann bräuchte es einen Raum-Mikro- oder Mix-Kanal auf einem freien DVS-Empfangskanal (Dante-Routing, nur mit Samuels OK).
 - Die Raum-Automatik ist in der **Testphase** (Badge „Test“ im UI). Der Nutzer testet sie im echten Raum.
 
 ## Nächste Schritte

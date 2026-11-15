@@ -242,8 +242,13 @@ dante.on("feedback", (h: { id: string; freq: number; level: number }) => {
 const MATCH_LEN = 300;
 const inputHistory = new Map<string, number[]>();
 let latestInputs = new Map<string, number>();
+// MIX/MTX meters (RCP) as candidates too: a Dante channel may carry a mix (stream, recording).
+const latestMixes = new Map<string, number>();
+link.on("meter", (kind: string, values: number[]) => {
+  if (kind === "mix" || kind === "matrix") values.forEach((v, i) => latestMixes.set(`${kind}:${i}`, v));
+});
 setInterval(() => {
-  for (const [k, v] of latestInputs) {
+  for (const [k, v] of [...latestInputs, ...latestMixes]) {
     const h = inputHistory.get(k) ?? [];
     h.push(v - 126);
     if (h.length > MATCH_LEN) h.shift();

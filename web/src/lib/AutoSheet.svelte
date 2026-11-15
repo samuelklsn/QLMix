@@ -52,6 +52,9 @@
   }
   const sensitivities = [{ v: "low", l: "Niedrig" }, { v: "normal", l: "Normal" }, { v: "high", l: "Hoch" }] as const;
   const dante = $derived(auto?.dante);
+  // Only channels that carry sound (or are matched) – the silent rest is summed up in one line.
+  const danteLive = $derived((dante?.channels ?? []).filter((c) => (c.level ?? -120) > -80 || c.match));
+  const danteSilent = $derived((dante?.channels.length ?? 0) - danteLive.length);
   const hz = (f: number) => (f >= 1000 ? `${(Math.round(f / 100) / 10).toLocaleString("de-DE")} kHz` : `${Math.round(f)} Hz`);
   const notchList = $derived(Object.entries(cfg?.notches ?? {}).flatMap(([key, list]) => {
     const [kind, i] = key.split(":");
@@ -349,17 +352,18 @@
       <h3 class="step"><span class="stepn">6</span>Dante-Ton und Pfeifschutz</h3>
       <div class="group">
         <p class="t-callout" class:warnmsg={dante && !dante.receiving}>{dante?.message || "Warte auf den Server …"}</p>
-        {#if dante?.channels.length}
+        {#if danteLive.length}
           <div class="dchans">
-            {#each dante.channels as ch}
+            {#each danteLive as ch (ch.id)}
               <div class="dch">
-                <span class="dname">Kanal {ch.ch}{dante.channels.some((x) => x.device !== ch.device) ? ` · ${ch.device}` : ""}</span>
+                <span class="dname">DVS {ch.num ?? ch.ch}</span>
                 <div class="mbar"><div class="mfill" class:live={(ch.level ?? -120) > -80} style="width: {Math.max(0, Math.min(100, ((ch.level ?? -120) + 90) / 90 * 100))}%"></div></div>
                 <span class="dinfo num">{ch.match ?? ((ch.level ?? -120) > -80 ? `${Math.round(ch.level!)} dB` : "kein Ton")}</span>
               </div>
             {/each}
           </div>
         {/if}
+        {#if danteSilent > 0}<p class="t-footnote">{danteSilent} weitere Dante-Kanäle ohne Ton.</p>{/if}
         <button class="pill" class:lit={cfg.notchesEnabled} aria-pressed={cfg.notchesEnabled}
           onclick={() => store.autoAction("config", { notchesEnabled: !cfg.notchesEnabled })}>EQ-Kerben gegen Pfeifen {cfg.notchesEnabled ? "an" : "aus"}</button>
         {#if notchList.length}
@@ -371,7 +375,7 @@
       </div>
       <p class="hint t-footnote">QLMix liest den Ton der Dante Virtual Soundcard auf diesem PC mit und erkennt Pfeifen am Ton.
         Dann setzt es im EQ des offenen Sprecher-Mikros eine schmale Kerbe – nur in einem freien Band (0 dB), dein EQ bleibt unangetastet.
-        Ist kein Band frei, wird wie bisher der Fader zurückgenommen. Neben jedem Dante-Kanal steht, welchen Pult-Kanal er trägt.</p>
+        Ist kein Band frei, wird wie bisher der Fader zurückgenommen. Neben jedem Dante-Kanal steht, was er trägt (Pult-Kanal oder Mix). Am besten wirkt der Pfeifschutz, wenn ein Mix oder Raum-Mikro dabei ist – dort ist Pfeifen zu hören.</p>
     </section>
 
     <!-- History -->
@@ -435,7 +439,7 @@
   .hpf { margin-top: var(--s3); }
   .warnmsg { color: var(--warn); }
   .dchans { display: flex; flex-direction: column; gap: var(--s2); }
-  .dch { display: grid; grid-template-columns: minmax(70px, 120px) 1fr minmax(64px, 120px); align-items: center; gap: var(--s3); font-size: var(--fs-footnote); }
+  .dch { display: grid; grid-template-columns: 56px 1fr minmax(90px, 160px); align-items: center; gap: var(--s3); font-size: var(--fs-footnote); }
   .dname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--label-2); }
   .dinfo { text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .mfill.live { background: var(--on); }

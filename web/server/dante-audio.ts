@@ -18,6 +18,8 @@ export interface DanteChannel {
   id: string;
   device: string;
   ch: number;
+  /** channel number on the Dante Virtual Soundcard (from "DVS Receive 5-6" → 5, 6) */
+  num: number;
   level: number | null;
   peak: number | null;
   /** console input this channel carries (matched by level), e.g. "CH 3 Raum" */
@@ -65,6 +67,12 @@ export function parseDshowDevices(stderr: string): string[] {
 
 export const isDanteDevice = (name: string) => /dante|dvs/i.test(name);
 
+/** First DVS channel of a device: "DVS Receive  5-6 (Dante Virtual Soundcard)" → 5, else 1. */
+export function firstChannel(device: string): number {
+  const m = /(\d+)\s*-\s*\d+/.exec(device.replace(/\(.*\)/, ""));
+  return m ? Number(m[1]) : 1;
+}
+
 /** Pearson correlation of two equally long series. */
 function correlation(a: number[], b: number[]): number {
   const n = a.length;
@@ -79,16 +87,24 @@ function correlation(a: number[], b: number[]): number {
  * step) with every input's meter course. Needs movement (not just noise) and a clear winner.
  */
 export function bestMatch(audio: number[], inputs: Map<string, number[]>, minCorr = 0.75): string | null {
-  if (audio.length < 50) return null;
+  const ranked = rankMatches(audio, inputs);
+  if (!ranked.length || ranked[0].corr < minCorr) return null;
+  // A mix contains its sources: when a MIX/MTX follows as closely as the best single input, the
+  // channel most likely carries that mix (only one source was playing).
+  const mix = ranked.find((r) => /^(mix|matrix):/.test(r.key));
+  if (mix && mix.corr >= minCorr && mix.corr >= ranked[0].corr - 0.1) return mix.key;
+  const second = ranked[1]?.corr ?? -1;
+  return ranked[0].corr - second >= 0.05 ? ranked[0].key : null;
+}
+
+/** All candidates sorted by correlation with the audio level course (needs movement, ≥ 5 s). */
+export function rankMatches(audio: number[], inputs: Map<string, number[]>): { key: string; corr: number }[] {
+  if (audio.length < 50) return [];
   const spread = Math.max(...audio) - Math.min(...audio);
-  if (spread < 12) return null;
-  let best: string | null = null, bestC = minCorr, second = -1;
-  for (const [key, series] of inputs) {
-    if (series.length !== audio.length) continue;
-    const c = correlation(audio, series);
-    if (c > bestC) { second = bestC; bestC = c; best = key; } else if (c > second) second = c;
-  }
-  return best && bestC - second >= 0.05 ? best : null;
+  if (spread < 12) return [];
+  const out: { key: string; corr: number }[] = [];
+  for (const [key, series] of inputs) if (series.length === audio.length) out.push({ key, corr: correlation(audio, series) });
+  return out.sort((a, b) => b.corr - a.corr);
 }
 
 interface Capture { device: string; proc: ChildProcess; analyzer: ChannelAnalyzer | null; err: string }
@@ -231,10 +247,10 @@ export class DanteAudio extends EventEmitter {
       for (let i = 0; i < c.analyzer.channels; i++) {
         const id = `${c.device}#${i + 1}`;
         const old = this.status.channels.find((x) => x.id === id);
-        channels.push(old ?? { id, device: c.device, ch: i + 1, level: null, peak: null, match: null });
+        channels.push(old ?? { id, device: c.device, ch: i + 1, num: firstChannel(c.device) + i, level: null, peak: null, match: null });
       }
     }
-    this.status = { ...this.status, channels };
+    this.status = { ...this.status, channels: channels.sort((a, b) => a.num - b.num) };
   }
 
   private updateMessage(): void {

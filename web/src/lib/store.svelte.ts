@@ -53,7 +53,7 @@ export interface DanteState {
   message: string;
   receiving: boolean;
   devices: string[];
-  channels: { id: string; device: string; ch: number; level: number | null; peak: number | null; match: string | null }[];
+  channels: { id: string; device: string; ch: number; num: number; level: number | null; peak: number | null; match: string | null }[];
 }
 
 export interface AutoMic {

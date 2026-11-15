@@ -44,3 +44,13 @@ test("matches an audio channel to the console input with the same level course",
   assert.equal(bestMatch(flat, inputs), null, "a silent channel matches nothing");
   assert.equal(bestMatch(audio.slice(0, 20), inputs), null, "too short");
 });
+
+test("DVS channel numbers come from the device name; a mix wins over its single source", async () => {
+  const { firstChannel, bestMatch } = await import("../server/dante-audio.ts");
+  assert.equal(firstChannel("DVS Receive  5-6 (Dante Virtual Soundcard)"), 5);
+  assert.equal(firstChannel("Dante Virtual Soundcard (x64)"), 1);
+  const music = Array.from({ length: 200 }, (_, i) => (Math.sin(i / 4) > 0 ? -20 : -45) + (i % 3));
+  // only the sampler plays: ST IN 7 and the stream mix (MIX 9) follow the same course
+  const inputs = new Map([["stereoInput:6", music], ["mix:8", music.map((v, i) => v - 6 + (i % 2))]]);
+  assert.equal(bestMatch(music.map((v) => v - 10), inputs), "mix:8");
+});
