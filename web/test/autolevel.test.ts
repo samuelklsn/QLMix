@@ -71,6 +71,7 @@ function church(start: { faders?: Record<string, number>; on?: Record<string, bo
 
 test("switches a closed mic on, pulls the fader up and regulates to the target", () => {
   const sim = church();
+  sim.al.config.ceiling = 5;
   assert.equal(sim.al.start(), null);
   sim.run(25);                                   // quiet: noise floors are learned
   assert.equal(sim.on["input:0"], false);
@@ -333,9 +334,10 @@ test("follows a speaker who gets louder and quieter", () => {
   sim.talk("input:0", 5);                          // speaks 5 dB louder
   sim.run(20);
   assert.ok(Math.abs(sim.faders["input:0"] - (normal - 500)) <= 150, `louder → ${sim.faders["input:0"]}`);
-  sim.talk("input:0", -4);                         // and then quieter
-  sim.run(25);
-  assert.ok(Math.abs(sim.faders["input:0"] - 400) <= 150, `quieter → ${sim.faders["input:0"]}`);
+  sim.talk("input:0", -4);                         // and then quieter – corrected slowly, no pumping
+  sim.run(40);
+  // within the resting zone (corrections start at 3 dB, stop at 1 dB) of the ideal +4 dB
+  assert.ok(Math.abs(sim.faders["input:0"] - 400) <= 200, `quieter → ${sim.faders["input:0"]}`);
 });
 
 test("averages two room mics and ignores speech pauses", () => {
@@ -442,4 +444,52 @@ test("stays on across a restart and the emergency stop closes all speaker mics",
   assert.match(sim.al.getStatus().history[0].text, /Notaus/);
   const again = new AutoLevel((sim.al as any).io, { ...sim.al.config, running: true });
   assert.equal(again.config.running, true, "a config with running: true is restored as on");
+});
+
+test("room mics recalibrate slowly and at most ±3 dB – no creeping up during a long speech", () => {
+  const sim = church({ faders: { "input:0": 0 }, on: { "input:0": true } });
+  sim.al.config.ceiling = 10;
+  sim.al.start();
+  sim.run(25);
+  sim.talk("input:0");
+  sim.run(20);                                      // calibrated
+  const p = sim.al.config.profiles["input:0"];
+  assert.ok(p?.sum != null && p.base != null, "calibrated");
+  const base = p.base!;
+  sim.al.config.offset = 8;                         // the room now always measures 8 dB below the target
+  sim.run(300);                                     // 5 minutes of speech
+  assert.ok(p.sum! <= base + 3.01, `sum ${p.sum} stays within base ${base} + 3 dB`);
+  assert.ok(sim.faders["input:0"] <= 400, `fader ${sim.faders["input:0"]} rose at most ~3 dB`);
+});
+
+test("effect check: if the room mics do not hear a mic, raising stops", () => {
+  const sim = church({ faders: { "input:1": -1000 }, on: { "input:1": true } });
+  sim.al.config.ceiling = 10;
+  sim.al.start();
+  sim.run(25);
+  // the Pult mic plays on a loudspeaker the room mic hardly hears: room stays at the voice's direct sound
+  const al = sim.al as any;
+  for (let i = 0; i < 300; i++) {
+    sim.skip(100);
+    const word = i % 10 < 8;
+    al.setMeters(new Map([["input:0", 50 + (i % 3)], ["input:1", word ? 50 : 20 + (i % 3)], ["input:2", word ? 80 + (i % 2) : 56]]));
+    if (i % 2) al.tick();
+  }
+  assert.ok(sim.faders["input:1"] <= -500, `fader ${sim.faders["input:1"]} not pushed up to the ceiling`);
+  assert.match(sim.al.getStatus().history.map((h) => h.text).join("|"), /Raum-Mikros hören dieses Mikro kaum/);
+  assert.equal(sim.al.config.profiles["input:1"]?.noRoom, true);
+});
+
+test("a distant speaker is lifted at most 6 dB above the normal position", () => {
+  const sim = church({ faders: { "input:0": 0 }, on: { "input:0": true } });
+  sim.al.config.ceiling = 10;
+  sim.al.start();
+  sim.run(25);
+  sim.talk("input:0");
+  sim.run(20);
+  const normal = sim.faders["input:0"];
+  sim.talk("input:0", -14);                         // 14 dB quieter at the mic (far away)
+  sim.run(60);
+  assert.ok(sim.faders["input:0"] <= normal + 650, `fader ${sim.faders["input:0"]} ≤ normal ${normal} + 6 dB`);
+  assert.match(sim.al.getStatus().history.map((h) => h.text).join("|"), /höchstens \+6 dB über normal/);
 });

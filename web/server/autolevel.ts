@@ -30,8 +30,12 @@ export interface MicProfile {
   speech: number;
   /** mic speaking level + fader (dB) that gives the target loudness in the room; null = not calibrated yet */
   sum: number | null;
+  /** sum right after calibration – the room mics may move `sum` at most ±CAL_RANGE_DB away from it */
+  base?: number | null;
   /** set by hand – the room mics do not recalibrate it (until "So soll es klingen" or "vergessen") */
   manual?: boolean;
+  /** the room mics hardly hear this mic – calibrated without them, never recalibrated by them */
+  noRoom?: boolean;
 }
 
 export interface AutoConfig {
@@ -63,7 +67,7 @@ export interface AutoConfig {
 
 export const DEFAULT_AUTO_CONFIG: AutoConfig = {
   channels: [], roomMics: [], musicIgnore: [], reference: null, offset: 0, speed: 1, sensitivity: "normal",
-  ceiling: 5, minLevel: -20, startLevel: -10, closeAfter: 30, learned: {}, limits: {}, profiles: {}, running: false,
+  ceiling: 0, minLevel: -20, startLevel: -10, closeAfter: 30, learned: {}, limits: {}, profiles: {}, running: false,
 };
 
 export interface AutoIO {
@@ -186,8 +190,18 @@ const SETTLE_RATE_DB = 3;
 const HOLD_START_DB = 3;
 const HOLD_STOP_DB = 1;
 const HOLD_WINDOW_MS = 10000;
-/** Room mics recalibrate a mic's sum by at most this much per second. */
-const CAL_RATE_DB = 0.15;
+/** Room mics recalibrate a mic's sum by at most this much per second (≈ 1 dB per minute) … */
+const CAL_RATE_DB = 0.02;
+/** … and never further than this from the calibration. */
+const CAL_RANGE_DB = 3;
+/** The normal speaking level is only learned from levels within this range of it. */
+const SPEECH_LEARN_RANGE_DB = 6;
+/** A quiet or distant speaker is raised at most this far above the mic's normal position. */
+const MAX_BOOST_DB = 6;
+/** Effect check: after raising this much, the room must have become at least EFFECT_MIN_DB louder. */
+const EFFECT_STEP_DB = 4;
+const EFFECT_MIN_DB = 1.5;
+const EFFECT_WAIT_MS = 3000;
 /** Without calibration: the room must be on target this long before the sum is stored. */
 const CAL_STABLE_MS = 3000;
 /** Music: another input this far above its floor and above MUSIC_MIN_RAW counts as playing. */
@@ -219,6 +233,11 @@ interface ChannelState {
   calOkMs: number;
   lastCalAt: number;
   lastProfileAt: number;
+  /** effect check while raising without calibration: where it started */
+  probe: { fader: number; room: number; t: number } | null;
+  /** fader when this speaker's settling started (for the history) */
+  settleFrom: number | null;
+  correctSince: number;
 }
 
 function percentile(values: number[], p: number): number {
@@ -276,7 +295,8 @@ export class AutoLevel {
       channels: c.channels, roomMics: c.roomMics, musicIgnore: c.musicIgnore, reference: c.reference, offset: c.offset,
       speed: c.speed, sensitivity: (["low", "normal", "high"] as const).includes(c.sensitivity) ? c.sensitivity : "normal",
       ceiling: c.ceiling, minLevel: c.minLevel, startLevel: c.startLevel, closeAfter: c.closeAfter,
-      learned: { ...c.learned }, limits: { ...c.limits }, profiles: { ...c.profiles }, running: !!c.running,
+      learned: { ...c.learned }, limits: { ...c.limits }, running: !!c.running,
+      profiles: Object.fromEntries(Object.entries(c.profiles ?? {}).map(([k, p]) => [k, { ...p, base: p.base ?? p.sum }])),
     };
     this.status = this.emptyStatus("Aus");
   }
@@ -354,7 +374,7 @@ export class AutoLevel {
     this.config.reference = Math.round(speech * 10) / 10;
     this.config.offset = 0;
     // The calibration of every mic refers to the old target – learn it again.
-    for (const p of Object.values(this.config.profiles)) { p.sum = null; p.manual = false; }
+    for (const p of Object.values(this.config.profiles)) { p.sum = null; p.base = null; p.manual = false; p.noRoom = false; }
     return null;
   }
 
@@ -460,13 +480,16 @@ export class AutoLevel {
     const L = this.micSpeech(c, now, settling ? st.activeSince : now - HOLD_WINDOW_MS);
     const profile = this.config.profiles[key];
 
-    // Learn the normal speaking level of this mic.
+    // Learn the normal speaking level of this mic – slowly, and only from levels near it, so a
+    // distant or unusually quiet speaker does not redefine "normal".
     if (L !== null && now - st.lastProfileAt > 2000 && now - st.activeSince > 1500) {
       st.lastProfileAt = now;
       const speechNow = Math.round(L * 10) / 10;
-      if (!profile) this.config.profiles[key] = { speech: speechNow, sum: null };
-      else profile.speech = Math.round((profile.speech * 0.9 + speechNow * 0.1) * 10) / 10;
-      this.onConfigChange?.();
+      if (!profile) { this.config.profiles[key] = { speech: speechNow, sum: null }; this.onConfigChange?.(); }
+      else if (Math.abs(speechNow - profile.speech) <= SPEECH_LEARN_RANGE_DB) {
+        profile.speech = Math.round((profile.speech * 0.95 + speechNow * 0.05) * 10) / 10;
+        this.onConfigChange?.();
+      }
     }
 
     const p = this.config.profiles[key];
@@ -476,18 +499,41 @@ export class AutoLevel {
         return { message: `${name}: lerne die richtige Stellung – warte auf Sprache an den Raum-Mikros …`, level: "info" };
       }
       const error = room.target - room.speech;
+      const calibrate = (pos: number, noRoom: boolean) => {
+        const sum = Math.round((L + pos / 100) * 10) / 10;
+        this.config.profiles[key] = { speech: p?.speech ?? L, sum, base: sum, noRoom };
+        this.learn(c, pos);
+        this.onConfigChange?.();
+      };
       if (Math.abs(error) < DEADBAND) {
+        st.probe = null;
         st.calOkMs += dt * 1000;
         if (st.calOkMs >= CAL_STABLE_MS) {
-          this.config.profiles[key] = { speech: p?.speech ?? L, sum: Math.round((L + f / 100) * 10) / 10 };
-          this.learn(c, f);
+          calibrate(f, false);
           this.note(`${name}: richtige Stellung gelernt (${dbText(f)}).`);
-          this.onConfigChange?.();
         }
         return { message: `${name}: Lautstärke passt – merke mir die Stellung …`, level: "ok" };
       }
       st.calOkMs = 0;
       if (error > 0 && st.noRaiseUntil > now) return { message: `${name}: nach Pfeifen kein Anheben.`, level: "warn" };
+      // Effect check: raising must make the room louder – otherwise the room mics hardly hear
+      // this mic (other loudspeaker zone, far away), and raising further only adds noise and feedback.
+      if (error > 0) {
+        if (!st.probe) st.probe = { fader: f, room: room.speech, t: now };
+        else if (f - st.probe.fader >= EFFECT_STEP_DB * 100 && now - st.probe.t >= EFFECT_WAIT_MS) {
+          if (room.speech - st.probe.room < EFFECT_MIN_DB) {
+            const back = st.probe.fader;
+            st.probe = null;
+            this.io.setFader(c, back);
+            st.seenFader = this.io.fader(c) ?? null;
+            st.lastWriteAt = now;
+            calibrate(back, true);
+            this.note(`${name}: Raum-Mikros hören dieses Mikro kaum – Fader bleibt bei ${dbText(back)} (ohne Raum eingemessen).`);
+            return { message: `${name}: Raum-Mikros hören dieses Mikro kaum – Fader bleibt.`, level: "warn" };
+          }
+          st.probe = { fader: f, room: room.speech, t: now };
+        }
+      } else st.probe = null;
       const rate = settling ? SETTLE_RATE_DB : Math.max(1, this.config.speed);
       const limited = this.stepTowards(c, st, f + Math.round(error * 100), rate, now);
       if (limited) return { message: `${name}: Grenze erreicht (${this.limitText(c, error)}).`, level: "warn" };
@@ -496,29 +542,46 @@ export class AutoLevel {
 
     // Calibrated: the room mics only nudge the sum slowly (room changes, more people …) – and
     // only while the fader rests, otherwise both loops would chase each other.
-    if (!p.manual && room.fresh && room.speech !== null && room.target !== null && !settling && !st.correcting
+    if (!p.manual && !p.noRoom && room.fresh && room.speech !== null && room.target !== null && !settling && !st.correcting
       && now - st.activeSince > 5000 && now - st.lastCalAt >= 1000) {
       const err = room.target - room.speech;
       const elapsed = st.lastCalAt ? Math.min(2, (now - st.lastCalAt) / 1000) : 1;
       st.lastCalAt = now;
+      const base = p.base ?? p.sum;
       if (Math.abs(err) > DEADBAND) {
-        p.sum = Math.round((p.sum + Math.sign(err) * Math.min(Math.abs(err) * 0.1, CAL_RATE_DB * elapsed)) * 100) / 100;
-        this.onConfigChange?.();
+        const next = p.sum + Math.sign(err) * Math.min(Math.abs(err) * 0.1, CAL_RATE_DB * elapsed);
+        const capped = Math.min(base + CAL_RANGE_DB, Math.max(base - CAL_RANGE_DB, next));
+        if (Math.abs(capped - p.sum) >= 0.005) { p.sum = Math.round(capped * 100) / 100; this.onConfigChange?.(); }
       }
     }
     if (L === null) return { message: `${name}: warte auf Sprache …`, level: "info" };
 
-    const desired = Math.round((p.sum - L) * 100);
+    // A quiet or distant speaker is lifted at most MAX_BOOST_DB above the normal position –
+    // further up only makes the room (reverb, noise) louder and risks feedback.
+    const capped = L < p.speech - MAX_BOOST_DB;
+    const desired = Math.round((p.sum - Math.max(L, p.speech - MAX_BOOST_DB)) * 100);
     const diff = (Math.min(desired, this.maxLevel(c)) - f) / 100;
     if (settling) {
-      if (Math.abs(diff) <= HOLD_STOP_DB) { this.learn(c, f); return { message: `${name}: neuer Sprecher – Lautstärke passt.`, level: "ok" }; }
+      st.settleFrom ??= f;
+      if (Math.abs(diff) <= HOLD_STOP_DB) {
+        this.learn(c, f);
+        if (Math.abs(f - st.settleFrom) >= 200) this.note(`${name}: neuer Sprecher ${f > st.settleFrom ? "leiser" : "lauter"} als sonst – Fader auf ${dbText(f)}.`);
+        st.settleFrom = f; // note once
+        return { message: `${name}: neuer Sprecher – Lautstärke passt.`, level: "ok" };
+      }
       if (diff > 0 && st.noRaiseUntil > now) return { message: `${name}: nach Pfeifen kein Anheben.`, level: "warn" };
       const limited = this.stepTowards(c, st, desired, SETTLE_RATE_DB, now);
       if (limited) return { message: `${name}: Grenze erreicht (${this.limitText(c, diff)}).`, level: "warn" };
       return { message: `${name}: neuer Sprecher – stelle ein (${signed(diff)})`, level: "ok" };
     }
-    if (!st.correcting && Math.abs(diff) > HOLD_START_DB) st.correcting = true;
-    if (st.correcting && Math.abs(diff) <= HOLD_STOP_DB) st.correcting = false;
+    if (!st.correcting && Math.abs(diff) > HOLD_START_DB) {
+      st.correcting = true;
+      st.correctSince = now;
+      this.note(`${name}: spricht seit einiger Zeit ${diff > 0 ? "leiser" : "lauter"} – gleiche ${signed(diff)} langsam an${capped && diff > 0 ? " (höchstens +6 dB über normal)" : ""}.`);
+    }
+    // The speaking level is averaged over HOLD_WINDOW_MS and lags behind: keep following until the
+    // window holds only the new level, otherwise the correction stops halfway.
+    if (st.correcting && Math.abs(diff) <= HOLD_STOP_DB && now - st.correctSince >= HOLD_WINDOW_MS) st.correcting = false;
     if (!st.correcting) {
       if (Math.abs(diff) <= HOLD_STOP_DB) this.learn(c, f);
       return { message: `${name}: Lautstärke passt – Fader bleibt ruhig.`, level: "ok" };
@@ -605,7 +668,7 @@ export class AutoLevel {
       st = {
         seenFader: null, seenOn: null, lastWriteAt: 0, pausedUntil: 0, noRaiseUntil: 0, lastFeedbackAt: 0,
         blockedAt: null, candidateSince: null, lastActiveAt: now, activeSince: now, settleUntil: 0, correcting: false,
-        calOkMs: 0, lastCalAt: 0, lastProfileAt: 0,
+        calOkMs: 0, lastCalAt: 0, lastProfileAt: 0, probe: null, settleFrom: null, correctSince: 0,
       };
       this.channels.set(ck(c), st);
     }
@@ -675,6 +738,7 @@ export class AutoLevel {
         // A new speaker (or the same after a long pause): set the fader once, quickly.
         st.activeSince = now;
         st.settleUntil = now + SETTLE_MS;
+        st.settleFrom = null;
         st.correcting = false;
         st.calOkMs = 0;
       }
@@ -748,6 +812,7 @@ export class AutoLevel {
     st.lastActiveAt = now;
     st.activeSince = now;
     st.settleUntil = now + SETTLE_MS;
+    st.settleFrom = null;
     st.candidateSince = null;
     this.note(`${name} spricht – ${actions.join(", ")}.`);
     return null;

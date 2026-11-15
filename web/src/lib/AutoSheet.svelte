@@ -35,6 +35,21 @@
     store.autoAction("config", { musicIgnore: isIgnored(c) ? list.filter((x) => !same(c)(x)) : [...list, c] });
   }
   let confirmPanic = $state(false);
+
+  // High-pass 100 Hz on every speaker mic – changes the console, so only after a confirmation.
+  let confirmHpf = $state(false);
+  let hpfDone = $state<number | null>(null);
+  function setHpf() {
+    let n = 0;
+    for (const c of cfg?.channels ?? []) {
+      const eq = store.eq(c);
+      if (!eq) continue;
+      store.writeEq(c, { ...eq, hpfOn: true, hpfFreq: 100 }, [{ p: "hpfOn" }, { p: "hpfFreq" }], true);
+      n++;
+    }
+    hpfDone = n;
+    confirmHpf = false;
+  }
   const sensitivities = [{ v: "low", l: "Niedrig" }, { v: "normal", l: "Normal" }, { v: "high", l: "Hoch" }] as const;
   const time = (t: number) => new Date(t).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   /** Meter mark: from here on a mic counts as "somebody talks into it". */
@@ -228,6 +243,21 @@
           </button>
         {/each}
       </div>
+      {#if cfg.channels.length}
+        <div class="group hpf">
+          {#if confirmHpf}
+            <p class="t-callout">Bei allen {cfg.channels.length} Sprecher-Mikros den <b>Hochpass auf 100 Hz</b> einschalten? Die bisherige Hochpass-Einstellung dieser Kanäle wird überschrieben.</p>
+            <div class="row">
+              <button class="pill" onclick={() => (confirmHpf = false)}>Abbrechen</button>
+              <button class="pill primary" onclick={setHpf}>Hochpass setzen</button>
+            </div>
+          {:else}
+            <button class="pill wide" onclick={() => { confirmHpf = true; hpfDone = null; }} disabled={!store.eqSchema || !store.connected}>Hochpass 100 Hz für Sprecher-Mikros</button>
+            {#if hpfDone !== null}<p class="okmsg"><Icon name="check" size={15} /> Hochpass bei {hpfDone} Mikros auf 100 Hz gesetzt.</p>{/if}
+            <p class="t-footnote">Filtert Trittschall, Poltern und Brummen weg: Sprache klingt klarer und es pfeift später. Einmal drücken genügt.</p>
+          {/if}
+        </div>
+      {/if}
       <p class="hint t-footnote">Nur diese Kanäle darf die Automatik einschalten und bewegen (z. B. Kanzel, Rednerpult, Funkmikros) – keine Instrumente oder Gesang.
         Die Automatik merkt sich pro Mikro, bei welcher Faderstellung die Lautstärke gepasst hat.</p>
     </section>
@@ -364,6 +394,8 @@
     box-shadow: inset 0 0 0 1px rgba(255, 69, 58, 0.35);
   }
   .confirm .row { display: flex; gap: var(--s2); justify-content: flex-end; }
+  .hpf { margin-top: var(--s3); }
+  .hpf .row { display: flex; gap: var(--s2); justify-content: flex-end; }
   .history { list-style: none; margin: 0; padding: var(--s3) var(--s4); gap: var(--s2); font-size: var(--fs-footnote); line-height: 18px; }
   .history li { display: grid; grid-template-columns: 64px 1fr; gap: var(--s2); }
   .htime { color: var(--label-2); }

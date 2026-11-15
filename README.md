@@ -21,6 +21,8 @@ des Pults; bedient wird **im Browser** auf jedem Handy, Tablet oder Computer.
   Sprecher-Mikros, zieht stille Mikros runter und öffnet schneller
 * **Neu in 1.7**: Raum-Automatik läuft ohne Techniker: ein Knopf, bleibt nach Neustart an, erkennt Musik selbst,
   öffnet nicht mehr bei Schritten oder Gemeindegesang, regelt ruhig statt ständig, Verlauf und Notaus für die Fernbedienung
+* **Neu in 1.8**: Raum-Automatik verstärkt nicht mehr zu stark (begrenztes Nachjustieren, Wirkungskontrolle, höchstens
+  +6 dB für leise Sprecher, Obergrenze 0 dB), Verlauf mit Begründung, Knopf „Hochpass 100 Hz für Sprecher-Mikros“
 
 <p align="center"><img src="docs/img/web/mixer-desktop.png" width="820" alt="QLMix im Browser: Kanalzüge und daneben der Kanal-Bereich mit Pegel, Fader und EQ"></p>
 
@@ -140,7 +142,7 @@ euer VPN). Für alle Sprecher-Mikros gilt **eine** Ziel-Lautstärke im Raum.
 4. **3 Sprecher-Mikrofone:** Kanzel, Rednerpult, Funkmikros – keine Instrumente oder Gesangsmikros.
 5. **Automatik starten.** Sie bleibt an, auch nach einem Neustart des PCs, bis jemand sie stoppt.
 
-### So arbeitet sie (ab Version 1.7)
+### So arbeitet sie (ab Version 1.8)
 
 * **Öffnen nur bei echter Sprache:** Ein Mikro geht erst auf, wenn etwa eine dreiviertel Sekunde lang direkt
   hineingesprochen wird. QLMix lernt pro Mikro, wie laut man normal hineinspricht – Schritte, Vorbeilaufen, ein Stoß
@@ -156,11 +158,23 @@ euer VPN). Für alle Sprecher-Mikros gilt **eine** Ziel-Lautstärke im Raum.
 * **Fader runter bei Stille:** Spricht in ein Sprecher-Mikro 30 Sekunden lang niemand (einstellbar 15 s – 2 min),
   geht sein Fader ganz runter. ON bleibt, wie es ist (wegen der Monitormixe). Spricht wieder jemand hinein, springt
   der Fader sofort auf die gemerkte Stellung.
+* **Nie zu stark verstärken:**
+  * Die Raum-Mikros führen die eingemessene Stellung höchstens etwa 1 dB pro Minute und insgesamt höchstens ±3 dB nach.
+  * **Wirkungskontrolle:** Wird ein Fader hochgezogen, muss der Raum lauter werden. Hören die Raum-Mikros ein Mikro kaum
+    (anderer Lautsprecher, weit weg), hört QLMix auf hochzuziehen und meldet es im Verlauf.
+  * Ein leiser oder weit entfernter Sprecher wird höchstens **6 dB** über die normale Stellung des Mikros angehoben.
+  * „Fader nie über“ steht ab Werk auf **0 dB**.
 * **Pfeifschutz:** Bleiben Raum-Mikro und Sprecher-Mikro etwa eine Sekunde lang ohne Pause laut, nimmt QLMix das Mikro
   sofort 6 dB zurück und merkt sich eine **Pfeifgrenze**, über die der Fader nicht mehr geht.
 * **Handgriffe:** Bewegst du einen Fader, während jemand spricht, übernimmt QLMix deine Stellung als richtig für dieses
   Mikro und macht von dort aus weiter. Schaltest du ein Mikro aus, während jemand hineinspricht, bleibt es aus, bis
   10 Sekunden niemand mehr hineinspricht.
+
+### Klang: Hochpass für Sprecher-Mikros
+
+Unter **3 Sprecher-Mikrofone** setzt der Knopf **„Hochpass 100 Hz für Sprecher-Mikros“** nach einer Rückfrage bei allen
+Sprecher-Mikros den Hochpass auf 100 Hz. Das filtert Trittschall, Poltern und Brummen weg; Sprache klingt klarer und es
+pfeift später. Den übrigen EQ stellt man einmal pro Mikro von Hand ein – die Automatik ändert ihn nicht.
 
 ### Von zu Hause prüfen
 
@@ -173,7 +187,9 @@ Sprecher-Mikros zu. **Bitte eine PIN setzen**, wenn QLMix von außen erreichbar 
 * Wird der Gain der Raum-Mikros geändert, „So soll es klingen“ neu drücken (QLMix misst dann alle Mikros neu ein).
 * „Gelerntes vergessen“ und „Pfeifgrenzen zurücksetzen“ unter „Regeln“ setzen das Gelernte zurück.
 * Ohne Pegel vom Pult (z. B. QL Editor läuft auf demselben PC) wartet die Automatik und bewegt nichts.
-* Den EQ stellt QLMix (noch) nicht automatisch gegen Pfeifen ein.
+* Den EQ stellt QLMix (noch) nicht automatisch gegen Pfeifen ein – das ist mit Dante geplant.
+* Nach dem Update auf 1.8 einmal „Gelerntes vergessen“, „Pfeifgrenzen zurücksetzen“ und „So soll es klingen“ neu
+  drücken, und „Fader nie über“ auf 0 dB stellen.
 * **Vor dem ersten Einsatz im Gottesdienst in Ruhe testen.**
 
 ## Weitere Teile dieses Projekts

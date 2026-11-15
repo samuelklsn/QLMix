@@ -1,6 +1,6 @@
 # STATUS – QLMix
 
-Stand: 2026-11-12 · Version **1.7.0** veröffentlicht (Release `v1.7.0`)
+Stand: 2026-11-12 · Version **1.8.0** veröffentlicht (Release `v1.8.0`)
 
 ## Fertig
 
@@ -78,12 +78,21 @@ Stand: 2026-11-12 · Version **1.7.0** veröffentlicht (Release `v1.7.0`)
 - Notaus, Verlauf (40 Einträge), Zustandsanzeige Pult/Pegel/Raum-Mikros.
 - Behoben: Gelerntes wurde bei durchgehender Rede nie gespeichert (Debounce) → jetzt höchstens alle 5 s gespeichert.
 
+**1.8.0: nie zu stark verstärken**
+- Samuels Rückmeldung zu 1.7: einzelne Mikros wurden viel zu stark verstärkt.
+- Ursache 1 (Fehler): Nachkalibrieren der Summe über die Raum-Mikros lief mit bis zu 0,15 dB/s (9 dB/min) ohne Grenze → Fader kroch während langer Reden hoch. Jetzt 0,02 dB/s und höchstens ±3 dB um `base`.
+- Ursache 2: Hörten die Raum-Mikros ein Mikro kaum, zog das Einmessen bis zur Obergrenze. Jetzt Wirkungskontrolle: nach +4 dB muss der Raum ≥ 1,5 dB lauter sein, sonst zurück auf den Ausgangspunkt, Einmessen ohne Raum (`noRoom`).
+- Ursache 3: Leise/entfernte Sprecher wurden voll ausgeglichen. Jetzt höchstens +6 dB über der normalen Stellung; normaler Sprechpegel lernt nur aus Werten ±6 dB davon (5 % pro Schritt).
+- Nachregeln läuft weiter, bis das 10-s-Fenster nur noch den neuen Pegel enthält (vorher Stopp auf halbem Weg).
+- „Fader nie über“ ab Werk 0 dB (gespeicherte Werte bleiben). Verlauf nennt Gründe („spricht seit einiger Zeit leiser – gleiche +3 dB an“).
+- Knopf „Hochpass 100 Hz für Sprecher-Mikros“ mit Rückfrage (im Simulator geprüft: HPF an, Index 32 = 100 Hz).
+
 **Sonstiges**
 - 15 Web-Tests grün, `svelte-check` 0 Fehler.
 
 ## In Arbeit
 
-- 1.7.0 auf dem Windows-PC einspielen und am echten Pult testen (Einlernen, Musik-Erkennung, Neustart).
+- 1.8.0 auf dem Windows-PC einspielen, Gelerntes zurücksetzen, am echten Pult testen.
 - Die Raum-Automatik ist in der **Testphase** (Badge „Test“ im UI). Der Nutzer testet sie im echten Raum.
 
 ## Nächste Schritte
@@ -93,7 +102,7 @@ Stand: 2026-11-12 · Version **1.7.0** veröffentlicht (Release `v1.7.0`)
 - **Samuel fragen, welche Funktionen ihm am meisten fehlen.** Vorschläge waren Mute-Gruppen, Pan, Sends eines Kanals auf alle Mixe, Szenen speichern. Er hat noch nicht geantwortet.
 
 - 1.2.0 auf dem Windows-PC einspielen (`update.cmd`) und am echten Pult und iPhone prüfen. Die Rückmeldung des Nutzers steht noch aus.
-- **Raum-Automatik (1.7) im echten Raum testen.**
+- **Raum-Automatik (1.8) im echten Raum testen.**
   - Musik-Erkennung: Welche Kanäle zählen fälschlich als Musik (z. B. ein nicht ausgewähltes Sprechermikro)? → unter „Musik-Erkennung“ ausnehmen.
   - Öffnet es zu spät/zu früh? Empfindlichkeit anpassen; Schwellen in `autolevel.ts` (`OPEN_BELOW_SPEECH`, `CONFIRM_MS`).
 - **Danach (1.8): EQ-Kerben gegen Pfeifen über Dante Virtual Soundcard** (Plan mit Samuel besprochen: ffmpeg liest DVS im WDM-Modus, FFT, Kerbe in freiem PEQ-Band). Samuel muss prüfen, ob DVS lizenziert und im WDM-Modus ist.
