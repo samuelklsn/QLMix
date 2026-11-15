@@ -493,3 +493,43 @@ test("a distant speaker is lifted at most 6 dB above the normal position", () =>
   assert.ok(sim.faders["input:0"] <= normal + 650, `fader ${sim.faders["input:0"]} ≤ normal ${normal} + 6 dB`);
   assert.match(sim.al.getStatus().history.map((h) => h.text).join("|"), /höchstens \+6 dB über normal/);
 });
+
+test("Dante feedback: an EQ notch first, the fader only when no band is left", () => {
+  const sim = church({ faders: { "input:0": 0 }, on: { "input:0": true } });
+  const calls: number[] = [];
+  let bandsLeft = 1;
+  (sim.al as any).io.notch = (_c: ChannelId, freq: number) => {
+    calls.push(freq);
+    return bandsLeft-- > 0 ? { ok: true, text: "EQ-Kerbe −6 dB" } : { ok: false, reason: "kein freies EQ-Band" };
+  };
+  sim.al.start();
+  sim.run(25);
+  sim.talk("input:0");
+  sim.run(5);
+  const before = sim.faders["input:0"];
+  sim.al.audioFeedback(2537);
+  assert.deepEqual(calls, [2537]);
+  assert.equal(sim.faders["input:0"], before, "notch instead of fader");
+  assert.match(sim.al.getStatus().history[0].text, /Pfeifen bei 2,5 kHz – Kanzel: EQ-Kerbe −6 dB/);
+  sim.al.audioFeedback(800);
+  assert.equal(sim.faders["input:0"], before - 600, "no band left → fader 6 dB down");
+  assert.match(sim.al.getStatus().history[0].text, /kein freies EQ-Band – Kanzel 6 dB zurück/);
+  sim.al.config.notchesEnabled = false;
+  calls.length = 0;
+  sim.al.audioFeedback(1200);
+  assert.equal(calls.length, 0, "notches switched off → never touches the EQ");
+});
+
+test("Dante feedback during a pause: only the mic spoken into last gets the notch", () => {
+  const sim = church({ faders: { "input:0": 0, "input:1": -500 }, on: { "input:0": true, "input:1": true } });
+  const notched: string[] = [];
+  (sim.al as any).io.notch = (c: ChannelId) => { notched.push(key(c)); return { ok: true, text: "EQ-Kerbe" }; };
+  sim.al.start();
+  sim.run(25);
+  sim.talk("input:0");
+  sim.run(5);
+  sim.talk(null);
+  sim.run(2);                                       // a pause – nobody is "the speaker" right now
+  sim.al.audioFeedback(2537);
+  assert.deepEqual(notched, ["input:0"]);
+});

@@ -25,6 +25,9 @@ if ($git -and (Test-Path (Join-Path (Split-Path -Parent $Web) ".git"))) {
 npm.cmd install --no-audit --no-fund
 npm.cmd run build
 
+# ffmpeg für den Dante-Ton der Raum-Automatik (ab Version 1.9)
+& (Join-Path $PSScriptRoot "ensure-ffmpeg.ps1") -Web $Web
+
 # Firewall: Web-Port und HTTPS-Port (ab Version 1.1 für die Raum-Automatik)
 $port = 8080; $httpsPort = 8443
 try {

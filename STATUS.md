@@ -1,6 +1,6 @@
 # STATUS – QLMix
 
-Stand: 2026-11-12 · Version **1.8.0** veröffentlicht (Release `v1.8.0`)
+Stand: 2026-11-15 · Version **1.9.0** veröffentlicht (Release `v1.9.0`)
 
 ## Fertig
 
@@ -87,12 +87,22 @@ Stand: 2026-11-12 · Version **1.8.0** veröffentlicht (Release `v1.8.0`)
 - „Fader nie über“ ab Werk 0 dB (gespeicherte Werte bleiben). Verlauf nennt Gründe („spricht seit einiger Zeit leiser – gleiche +3 dB an“).
 - Knopf „Hochpass 100 Hz für Sprecher-Mikros“ mit Rückfrage (im Simulator geprüft: HPF an, Index 32 = 100 Hz).
 
+**1.9.0: Pfeifschutz über Dante**
+- Samuel: Dante Virtual Soundcard ist auf dem Server-PC installiert, lizenziert, WDM. Er kennt sich mit Dante nicht aus und kann dort nichts ändern → alles automatisch.
+- `dante-audio.ts`: sucht ffmpeg (web/tools/ffmpeg, PATH), listet DirectShow-Geräte, liest jedes „Dante/DVS“-Gerät mit allen Kanälen (f32le 48 kHz), Neustart alle 10 s bei Fehler. Kanal → Pult-Eingang per Pegel-Korrelation über 30 s.
+- `spectrum.ts`: FFT 8192, Hop 4096. Pfeifen = Spitze ≥ 15 dB über Umgebung, ≥ −70 dBFS, ≥ 0,6 s stabil (±2 Bins), ≥ 80 % präsent, nicht abklingend, ≥ 2 dB gewachsen (Musik 4 dB), trägt ≥ ~25 % der Energie, keine Obertonreihe. Tests: Sprache (tiefe/hohe Stimme, je 60 s), Orgelakkord, Rauschen, Dauerton → kein Alarm; wachsender Ton → erkannt.
+- `notch.ts`: freies Glocken-Band (0 dB, kein Shelf/LPF), am nächsten zur Frequenz; Q 8, −6 dB, vertiefen −3 dB bis −12 dB; Original wird gespeichert, „Kerben entfernen“ stellt es her. Im Simulator geprüft (2,5 kHz/Q 8/−12 dB gesetzt und exakt zurückgestellt).
+- Opfer: das zuletzt besprochene offene Sprecher-Mikro (10 s), sonst das am weitesten aufgezogene. Pegel-basierter Pfeifschutz schweigt 3 s nach einem Dante-Ereignis.
+- Server liest das EQ der Sprecher-Mikros alle ~10 s nach (`QLLink.setBackground`), damit „freies Band“ aktuell ist.
+- Windows: `ensure-ffmpeg.ps1` (install + update) lädt BtbN-ffmpeg nach web\tools\ffmpeg; Fehlschlag bricht nicht ab.
+- **Ungeprüft (kein Dante am Mac):** Gerätename der DVS unter DirectShow, Kanalzahl im WDM-Modus, ob der Dienst als SYSTEM die Soundkarte lesen darf (Windows-Mikrofon-Datenschutz). Die Anzeige „6 Dante-Ton“ zeigt den Fehlertext von ffmpeg.
+
 **Sonstiges**
 - 15 Web-Tests grün, `svelte-check` 0 Fehler.
 
 ## In Arbeit
 
-- 1.8.0 auf dem Windows-PC einspielen, Gelerntes zurücksetzen, am echten Pult testen.
+- 1.9.0 einspielen. Screenshot von „6 Dante-Ton“ am Windows-PC anfordern.
 - Die Raum-Automatik ist in der **Testphase** (Badge „Test“ im UI). Der Nutzer testet sie im echten Raum.
 
 ## Nächste Schritte
@@ -105,7 +115,7 @@ Stand: 2026-11-12 · Version **1.8.0** veröffentlicht (Release `v1.8.0`)
 - **Raum-Automatik (1.8) im echten Raum testen.**
   - Musik-Erkennung: Welche Kanäle zählen fälschlich als Musik (z. B. ein nicht ausgewähltes Sprechermikro)? → unter „Musik-Erkennung“ ausnehmen.
   - Öffnet es zu spät/zu früh? Empfindlichkeit anpassen; Schwellen in `autolevel.ts` (`OPEN_BELOW_SPEECH`, `CONFIRM_MS`).
-- **Danach (1.8): EQ-Kerben gegen Pfeifen über Dante Virtual Soundcard** (Plan mit Samuel besprochen: ffmpeg liest DVS im WDM-Modus, FFT, Kerbe in freiem PEQ-Band). Samuel muss prüfen, ob DVS lizenziert und im WDM-Modus ist.
+- Falls die DVS keinen Ton empfängt: automatische Dante-Zuweisung eines freien DVS-Empfangskanals (Dante-Steuerprotokoll) prüfen – nur nach Rückfrage, da Dante-Routing.
   - Löst der Pfeifschutz rechtzeitig aus? Löst er fälschlich aus (z. B. lang gezogene Vokale)? Dann `STEADY_DB`/`FEEDBACK_WINDOW_MS` anpassen.
   - Offene Frage: Display-Fehler, den Samuel gesehen hat, ist nicht genau bekannt (Screenshot erbeten).
   - Welche Kanäle sind die Raum-Mikros? Liefern sie genug Pegel (Sprache deutlich über Ruhe)?

@@ -21,12 +21,13 @@
     - Seit 1.4: schaltet ausgeschaltete Mikros selbst ein und merkt sich pro Mikro die Faderstellung (`learned`).
     - Seit 1.6: übernimmt beim Start alle Sprecher-Mikros, Fader nach `closeAfter` s Stille auf −∞ (ON bleibt), Pfeifschutz mit Grenze pro Mikro (`limits`), Handgriff = 5 s Pause.
     - Seit 1.7: unbeaufsichtigter Betrieb. `running` bleibt über Neustarts an, Notaus (`panic`), Verlauf. Pro Mikro gelernt: Sprechpegel + „Summe“ (`profiles`: Mikropegel + Fader = Ziel); Regelung am Mikro selbst, einmal einstellen, dann nur > 3 dB langsam. Musik = andere Eingänge aktiv (`musicIgnore` ausnehmbar). Öffnen braucht anhaltende Sprache nahe dem gelernten Sprechpegel (`sensitivity`).
+    - Seit 1.9: Pfeifschutz über Dante. `dante-audio.ts` findet die Dante Virtual Soundcard (ffmpeg, DirectShow, WDM), liest alle Kanäle, ordnet sie per Pegelvergleich Pult-Kanälen zu; `spectrum.ts` erkennt Pfeifen (schmaler, wachsender Einzelton ohne Obertöne); `notch.ts` setzt Kerben nur in freien Bändern (`notches`, `notchesEnabled`), sonst Fader. ffmpeg liegt in `web/tools/ffmpeg` (Windows-Update lädt es, `windows/ensure-ffmpeg.ps1`). Test ohne Dante: Umgebungsvariable `QLMIX_AUDIO_INPUT` = ffmpeg-Eingabe als JSON-Array (z. B. lavfi).
     - Seit 1.8: Nachkalibrieren über Raum-Mikros max. 0,02 dB/s und ±3 dB um `base`; Wirkungskontrolle (`noRoom`, wenn Hochziehen den Raum nicht lauter macht); leiser Sprecher max. +6 dB über normal; Standard-Obergrenze 0 dB; Knopf Hochpass 100 Hz (schreibt HPF nur nach Bestätigung).
 - **Produktivbetrieb:** auf einem Windows-PC des Nutzers, Autostart beim Booten.
 - **Mac-App** (Swift, `Sources/QLMix`): der erste Prototyp. Sie kann kein EQ über RCP, weil das Pult EQ nicht über RCP anbietet.
   - TODO: klären, ob die Mac-App noch weiterentwickelt werden soll. Seit der Web-Version wurde sie nicht mehr angefasst.
 - **Repo:** https://github.com/samuelklsn/QLMix (öffentlich, Branch `main`)
-  - Aktuelle Version **1.8.0**, Releases als GitHub-Release mit Tag `vX.Y.Z`.
+  - Aktuelle Version **1.9.0**, Releases als GitHub-Release mit Tag `vX.Y.Z`.
 
 ## Tech-Stack
 
@@ -97,6 +98,9 @@ web/
     console-link.ts    RCP-Verbindung (Reconnect, Keepalive, Abfragen)
     ql-link.ts         SysEx-Verbindung Port 50000 (EQ, Dynamics, Rack, Meter)
     autolevel.ts       Regler der Raum-Automatik (rein, testbar)
+    dante-audio.ts     Dante Virtual Soundcard mitlesen (ffmpeg), Kanal-Zuordnung
+    spectrum.ts        FFT, Pfeif-Erkennung (rein, testbar)
+    notch.ts           EQ-Kerben in freien Bändern (rein, testbar)
     tls.ts             lokale CA + Server-Zertifikat
   shared/              von Server UND Browser genutzt
     rcp.ts             Kanal-Modell, Keys, Pegel/EQ-Umrechnung, QL-Tabellen, SysEx-Kodierung
@@ -106,7 +110,8 @@ web/
     app.css            Design-System (Tokens + globale Klassen)
     lib/               Komponenten und Store
   public/              icon.svg, manifest.webmanifest (PWA)
-  test/                rcp.test.ts, autolevel.test.ts
+  test/                rcp, autolevel, spectrum, notch, dante-audio (*.test.ts)
+  tools/               ffmpeg (gitignored, vom Windows-Update geladen)
   windows/             Windows-Installer/Updater/Diagnose
   config.json          Laufzeit-Config (gitignored): Pult-IP, Ports, PIN, autoConnect, autolevel
   certs/               lokale CA + Zertifikat (gitignored, wird automatisch erzeugt)

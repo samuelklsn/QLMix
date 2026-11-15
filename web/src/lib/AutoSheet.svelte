@@ -51,6 +51,13 @@
     confirmHpf = false;
   }
   const sensitivities = [{ v: "low", l: "Niedrig" }, { v: "normal", l: "Normal" }, { v: "high", l: "Hoch" }] as const;
+  const dante = $derived(auto?.dante);
+  const hz = (f: number) => (f >= 1000 ? `${(Math.round(f / 100) / 10).toLocaleString("de-DE")} kHz` : `${Math.round(f)} Hz`);
+  const notchList = $derived(Object.entries(cfg?.notches ?? {}).flatMap(([key, list]) => {
+    const [kind, i] = key.split(":");
+    const c = { kind, index: Number(i) } as ChannelId;
+    return list.map((n) => ({ key: `${key}-${n.band}`, label: name(c), text: `${hz(n.freq)} −${Math.abs(n.gain)} dB` }));
+  }));
   const time = (t: number) => new Date(t).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   /** Meter mark: from here on a mic counts as "somebody talks into it". */
   function useMark(m: { floor: number | null; speech: number | null }): number | null {
@@ -111,6 +118,7 @@
         <span class="chip" class:good={store.connected}><span class="dot2"></span>Pult</span>
         <span class="chip" class:good={st.metersAvailable}><span class="dot2"></span>Pegel</span>
         <span class="chip" class:good={st.room.fresh}><span class="dot2"></span>Raum-Mikros</span>
+        {#if dante && dante.state !== "off" && dante.state !== "no-device"}<span class="chip" class:good={dante.receiving}><span class="dot2"></span>Dante</span>{/if}
         {#if st.music}<span class="chip music"><Icon name="wave" size={13} />Musik</span>{/if}
       </div>
       {#if st.enabled}
@@ -336,6 +344,36 @@
         Ein Mikro, in das gesprochen wird, das aber kein Sprecher-Mikro ist, hier ausnehmen.</p>
     </section>
 
+    <!-- 6 Dante -->
+    <section>
+      <h3 class="step"><span class="stepn">6</span>Dante-Ton und Pfeifschutz</h3>
+      <div class="group">
+        <p class="t-callout" class:warnmsg={dante && !dante.receiving}>{dante?.message || "Warte auf den Server …"}</p>
+        {#if dante?.channels.length}
+          <div class="dchans">
+            {#each dante.channels as ch}
+              <div class="dch">
+                <span class="dname">Kanal {ch.ch}{dante.channels.some((x) => x.device !== ch.device) ? ` · ${ch.device}` : ""}</span>
+                <div class="mbar"><div class="mfill" class:live={(ch.level ?? -120) > -80} style="width: {Math.max(0, Math.min(100, ((ch.level ?? -120) + 90) / 90 * 100))}%"></div></div>
+                <span class="dinfo num">{ch.match ?? ((ch.level ?? -120) > -80 ? `${Math.round(ch.level!)} dB` : "kein Ton")}</span>
+              </div>
+            {/each}
+          </div>
+        {/if}
+        <button class="pill" class:lit={cfg.notchesEnabled} aria-pressed={cfg.notchesEnabled}
+          onclick={() => store.autoAction("config", { notchesEnabled: !cfg.notchesEnabled })}>EQ-Kerben gegen Pfeifen {cfg.notchesEnabled ? "an" : "aus"}</button>
+        {#if notchList.length}
+          <ul class="notches">
+            {#each notchList as n (n.key)}<li><b>{n.label}</b><span class="num">{n.text}</span></li>{/each}
+          </ul>
+          <button class="pill" onclick={() => store.autoAction("clearNotches")}>Kerben entfernen (EQ wie vorher)</button>
+        {/if}
+      </div>
+      <p class="hint t-footnote">QLMix liest den Ton der Dante Virtual Soundcard auf diesem PC mit und erkennt Pfeifen am Ton.
+        Dann setzt es im EQ des offenen Sprecher-Mikros eine schmale Kerbe – nur in einem freien Band (0 dB), dein EQ bleibt unangetastet.
+        Ist kein Band frei, wird wie bisher der Fader zurückgenommen. Neben jedem Dante-Kanal steht, welchen Pult-Kanal er trägt.</p>
+    </section>
+
     <!-- History -->
     {#if st.history?.length}
       <section>
@@ -395,6 +433,14 @@
   }
   .confirm .row { display: flex; gap: var(--s2); justify-content: flex-end; }
   .hpf { margin-top: var(--s3); }
+  .warnmsg { color: var(--warn); }
+  .dchans { display: flex; flex-direction: column; gap: var(--s2); }
+  .dch { display: grid; grid-template-columns: minmax(70px, 120px) 1fr minmax(64px, 120px); align-items: center; gap: var(--s3); font-size: var(--fs-footnote); }
+  .dname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--label-2); }
+  .dinfo { text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mfill.live { background: var(--on); }
+  .notches { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s1); font-size: var(--fs-callout); }
+  .notches li { display: flex; justify-content: space-between; gap: var(--s3); }
   .hpf .row { display: flex; gap: var(--s2); justify-content: flex-end; }
   .history { list-style: none; margin: 0; padding: var(--s3) var(--s4); gap: var(--s2); font-size: var(--fs-footnote); line-height: 18px; }
   .history li { display: grid; grid-template-columns: 64px 1fr; gap: var(--s2); }

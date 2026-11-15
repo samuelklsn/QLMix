@@ -23,6 +23,8 @@ des Pults; bedient wird **im Browser** auf jedem Handy, Tablet oder Computer.
   öffnet nicht mehr bei Schritten oder Gemeindegesang, regelt ruhig statt ständig, Verlauf und Notaus für die Fernbedienung
 * **Neu in 1.8**: Raum-Automatik verstärkt nicht mehr zu stark (begrenztes Nachjustieren, Wirkungskontrolle, höchstens
   +6 dB für leise Sprecher, Obergrenze 0 dB), Verlauf mit Begründung, Knopf „Hochpass 100 Hz für Sprecher-Mikros“
+* **Neu in 1.9**: Pfeifschutz über Dante – QLMix hört den Ton der Dante Virtual Soundcard mit, erkennt Pfeifen am Ton und
+  setzt eine schmale EQ-Kerbe auf die Pfeif-Frequenz (nur in freien EQ-Bändern), statt den Fader zurückzunehmen
 
 <p align="center"><img src="docs/img/web/mixer-desktop.png" width="820" alt="QLMix im Browser: Kanalzüge und daneben der Kanal-Bereich mit Pegel, Fader und EQ"></p>
 
@@ -170,6 +172,22 @@ euer VPN). Für alle Sprecher-Mikros gilt **eine** Ziel-Lautstärke im Raum.
   Mikro und macht von dort aus weiter. Schaltest du ein Mikro aus, während jemand hineinspricht, bleibt es aus, bis
   10 Sekunden niemand mehr hineinspricht.
 
+### Pfeifschutz über Dante (ab Version 1.9)
+
+Läuft auf dem QLMix-PC die **Dante Virtual Soundcard** (Modus WDM), hört QLMix ihren Ton mit – ohne Einrichtung:
+* QLMix findet die Soundkarte selbst, liest alle Empfangskanäle und zeigt unter **6 Dante-Ton und Pfeifschutz**, ob Ton
+  ankommt und welchen Pult-Kanal jeder Dante-Kanal trägt (QLMix vergleicht dazu die Pegel).
+* **Pfeifen wird am Ton erkannt:** ein einzelner, schmaler Ton, der stehen bleibt und lauter wird. Sprache, Gesang mit
+  Obertönen, ein gehaltener Orgelton oder Applaus lösen nichts aus.
+* Dann setzt QLMix im EQ des offenen Sprecher-Mikros eine **schmale Kerbe** (Q 8, −6 dB) genau auf die Pfeif-Frequenz.
+  Pfeift es dort wieder, wird sie tiefer (bis −12 dB). Verwendet wird **nur ein freies EQ-Band** (0 dB) – dein EQ bleibt
+  unangetastet. Ist kein Band frei, nimmt QLMix wie bisher den Fader zurück.
+* Die Kerben stehen im Auto-Fenster; **„Kerben entfernen“** stellt die Bänder genau wie vorher wieder her.
+  **„EQ-Kerben gegen Pfeifen an/aus“** schaltet das ab.
+* Das dafür nötige Programm **ffmpeg** lädt das Windows-Update automatisch (einmalig etwa 100 MB).
+* Kommt kein Dante-Ton an, arbeitet der Pfeifschutz wie bisher über die Pult-Pegel. Steht dort „es kommt kein Ton an“,
+  ist der Soundkarte in Dante noch kein Kanal zugewiesen.
+
 ### Klang: Hochpass für Sprecher-Mikros
 
 Unter **3 Sprecher-Mikrofone** setzt der Knopf **„Hochpass 100 Hz für Sprecher-Mikros“** nach einer Rückfrage bei allen
@@ -187,7 +205,6 @@ Sprecher-Mikros zu. **Bitte eine PIN setzen**, wenn QLMix von außen erreichbar 
 * Wird der Gain der Raum-Mikros geändert, „So soll es klingen“ neu drücken (QLMix misst dann alle Mikros neu ein).
 * „Gelerntes vergessen“ und „Pfeifgrenzen zurücksetzen“ unter „Regeln“ setzen das Gelernte zurück.
 * Ohne Pegel vom Pult (z. B. QL Editor läuft auf demselben PC) wartet die Automatik und bewegt nichts.
-* Den EQ stellt QLMix (noch) nicht automatisch gegen Pfeifen ein – das ist mit Dante geplant.
 * Nach dem Update auf 1.8 einmal „Gelerntes vergessen“, „Pfeifgrenzen zurücksetzen“ und „So soll es klingen“ neu
   drücken, und „Fader nie über“ auf 0 dB stellen.
 * **Vor dem ersten Einsatz im Gottesdienst in Ruhe testen.**

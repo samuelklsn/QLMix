@@ -21,6 +21,7 @@
 //   - Stays on across restarts (`running`), emergency stop closes all speaker mics.
 
 import { type ChannelId, levelToPosition } from "../shared/rcp.ts";
+import { type Notch, hzText } from "./notch.ts";
 
 export type Sensitivity = "low" | "normal" | "high";
 
@@ -63,11 +64,16 @@ export interface AutoConfig {
   profiles: Record<string, MicProfile>;
   /** automatic is switched on – restored after a restart */
   running: boolean;
+  /** feedback heard in the Dante audio is fought with an EQ notch in a free band */
+  notchesEnabled: boolean;
+  /** channel key → EQ notches set by the automatic */
+  notches: Record<string, Notch[]>;
 }
 
 export const DEFAULT_AUTO_CONFIG: AutoConfig = {
   channels: [], roomMics: [], musicIgnore: [], reference: null, offset: 0, speed: 1, sensitivity: "normal",
   ceiling: 0, minLevel: -20, startLevel: -10, closeAfter: 30, learned: {}, limits: {}, profiles: {}, running: false,
+  notchesEnabled: true, notches: {},
 };
 
 export interface AutoIO {
@@ -78,6 +84,8 @@ export interface AutoIO {
   setFader(c: ChannelId, raw: number): void;
   setOn(c: ChannelId, on: boolean): void;
   label(c: ChannelId): string;
+  /** Sets or deepens an EQ notch at `freq` on `c` (Dante audio); optional. */
+  notch?(c: ChannelId, freq: number): { ok: true; text: string } | { ok: false; reason: string };
 }
 
 export interface AutoStatus {
@@ -278,6 +286,8 @@ export class AutoLevel {
   private musicFrames: { t: number; active: string[] }[] = [];
   private musicUntil = 0;
   private wasMusic = false;
+  /** last feedback handled from the Dante audio (the meter-based detection then stays quiet) */
+  private audioFeedbackAt = 0;
   /** Optional hook (server log) when the detected speaker changes. */
   onActiveChange?: (label: string | null) => void;
   /** Optional hook for every history entry (server log). */
@@ -296,6 +306,7 @@ export class AutoLevel {
       speed: c.speed, sensitivity: (["low", "normal", "high"] as const).includes(c.sensitivity) ? c.sensitivity : "normal",
       ceiling: c.ceiling, minLevel: c.minLevel, startLevel: c.startLevel, closeAfter: c.closeAfter,
       learned: { ...c.learned }, limits: { ...c.limits }, running: !!c.running,
+      notchesEnabled: c.notchesEnabled !== false, notches: { ...c.notches },
       profiles: Object.fromEntries(Object.entries(c.profiles ?? {}).map(([k, p]) => [k, { ...p, base: p.base ?? p.sum }])),
     };
     this.status = this.emptyStatus("Aus");
@@ -367,6 +378,45 @@ export class AutoLevel {
     this.status = { ...this.status, history: [...this.history] };
   }
 
+  /**
+   * Feedback heard in the Dante audio at `freq` Hz: an EQ notch on the open speaker mic(s) –
+   * the fader only comes down when no free band is left (or notches are switched off).
+   */
+  audioFeedback(freq: number): void {
+    if (!this.enabled) return;
+    const now = this.io.now();
+    this.audioFeedbackAt = now;
+    // One mic: the one somebody spoke into last (within 10 s) – otherwise the one pulled up highest.
+    const open = this.config.channels.filter((c) => this.io.isOn(c) && (this.io.fader(c) ?? NEG_INF) > NEG_INF);
+    if (!open.length) { this.note(`Pfeifen bei ${hzText(freq)} – aber kein Sprecher-Mikro ist offen.`); return; }
+    const recent = open.map((c) => ({ c, at: this.state(c).lastActiveAt })).filter((x) => now - x.at < 10000).sort((a, b) => b.at - a.at);
+    const victims = [recent[0]?.c ?? [...open].sort((a, b) => (this.io.fader(b) ?? NEG_INF) - (this.io.fader(a) ?? NEG_INF))[0]];
+    for (const c of victims) {
+      const st = this.state(c);
+      if (this.config.notchesEnabled && this.io.notch) {
+        const r = this.io.notch(c, freq);
+        if (r.ok) {
+          st.noRaiseUntil = now + 3000;
+          this.note(`Pfeifen bei ${hzText(freq)} – ${this.io.label(c)}: ${r.text}.`);
+          this.onConfigChange?.();
+          continue;
+        }
+        this.cutForFeedback(c, st, now, `Pfeifen bei ${hzText(freq)} – ${r.reason}`);
+      } else this.cutForFeedback(c, st, now, `Pfeifen bei ${hzText(freq)}`);
+    }
+  }
+
+  private cutForFeedback(c: ChannelId, st: ChannelState, now: number, why: string): void {
+    const f = this.io.fader(c);
+    if (f === undefined || f <= NEG_INF) return;
+    this.setLimit(c, f - LIMIT_MARGIN_DB * 100);
+    this.move(c, st, -FEEDBACK_CUT_DB * 100, true);
+    st.noRaiseUntil = now + FEEDBACK_PAUSE_MS;
+    st.lastFeedbackAt = now;
+    this.noOpenUntil = now + FEEDBACK_PAUSE_MS;
+    this.note(`${why} – ${this.io.label(c)} 6 dB zurück, Grenze ${dbText(this.config.limits[ck(c)])} gemerkt.`);
+  }
+
   /** Uses the current speech level as the target ("So soll es klingen"). */
   takeReference(): string | null {
     const speech = this.speechLevel();
@@ -394,7 +444,7 @@ export class AutoLevel {
     const target = this.config.reference === null ? null : this.config.reference + this.config.offset;
     const metersAvailable = !!this.meters && now - this.meters.t < METER_STALE_MS;
     const { music, sources } = this.musicState(now, metersAvailable);
-    const victims = this.enabled && metersAvailable && fresh ? this.feedbackVictims(now, target, music) : [];
+    const victims = this.enabled && metersAvailable && fresh && now - this.audioFeedbackAt > 3000 ? this.feedbackVictims(now, target, music) : [];
     const feedback = victims.length > 0;
     const roomStatus = { level: fresh ? this.room[this.room.length - 1].level : null, speech, floor, target, fresh };
 
@@ -634,6 +684,7 @@ export class AutoLevel {
     this.event = { text, until: t + EVENT_MS };
     this.history.unshift({ t, text });
     if (this.history.length > HISTORY_MAX) this.history.length = HISTORY_MAX;
+    if (this.status) this.status = { ...this.status, history: [...this.history] };
     this.onEvent?.(text);
   }
 

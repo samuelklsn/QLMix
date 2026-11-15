@@ -16,9 +16,12 @@ import { ConsoleLink } from "./console-link.ts";
 import { QLLink } from "./ql-link.ts";
 import { AutoLevel, type AutoConfig, DEFAULT_AUTO_CONFIG } from "./autolevel.ts";
 import { ensureTls } from "./tls.ts";
+import { DanteAudio, bestMatch } from "./dante-audio.ts";
+import { type Notch, planNotch, hzText } from "./notch.ts";
 import { CUSTOM_FADER_ELEMENTS } from "../shared/ql-params.ts";
 import {
-  type ChannelId, type Key, type Kind, type Value, KINDS, PREFIX, channelLabel, channelParamKey, channelWriteKeys,
+  type ChannelId, type EqBand, type Key, type Kind, type Value, KINDS, PREFIX, channelLabel, channelParamKey, channelWriteKeys,
+  eqRaw, eqWriteKeys, readEq, snapEq,
 } from "../shared/rcp.ts";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -149,6 +152,7 @@ interface Client { ws: WebSocket; authed: boolean; eqWatch: ChannelId | null; ra
 
 function updateWatched() {
   ql.setWatched([...clients].map((c) => c.eqWatch).filter((c): c is ChannelId => c !== null));
+  ql.setBackground(auto.config.channels);
   ql.setWatchedRacks([...clients].map((c) => c.rackWatch).filter((r): r is number => r !== null));
 }
 const clients = new Set<Client>();
@@ -190,7 +194,76 @@ const auto = new AutoLevel({
   setFader: (c, raw) => { for (const k of channelWriteKeys(c, "level")) { link.set(k, raw); queueParam(k, raw); } },
   setOn: (c, on) => { for (const k of channelWriteKeys(c, "on")) { link.set(k, on ? 1 : 0); queueParam(k, on ? 1 : 0); } },
   label: (c) => { const n = link.values.get(channelParamKey(c, "name")); return typeof n === "string" && n ? n : channelLabel(c); },
+  notch: (c, freq) => {
+    if (ql.status !== "connected") return { ok: false, reason: "keine EQ-Verbindung zum Pult" };
+    const key = `${c.kind}:${c.index}`;
+    const list = auto.config.notches[key] ?? [];
+    const plan = planNotch(readEq((k) => ql.values.get(k), c, ql.schema), list, freq);
+    if (!plan.ok) return plan;
+    writeBand(c, plan.band, plan.value);
+    auto.config.notches[key] = plan.deepened ? list.map((n) => (n.band === plan.band ? plan.notch : n)) : [...list, plan.notch];
+    const db = `−${Math.abs(plan.notch.gain)} dB`;
+    return { ok: true, text: plan.deepened ? `EQ-Kerbe ${hzText(plan.notch.freq)} vertieft auf ${db}` : `EQ-Kerbe ${hzText(plan.notch.freq)} ${db} im Band ${BAND_NAMES[plan.band]}` };
+  },
 }, config.autolevel);
+const BAND_NAMES = ["LOW", "LO-MID", "HI-MID", "HIGH"];
+/** Writes one EQ band (freq, gain, Q) of a channel over the editor protocol. */
+function writeBand(c: ChannelId, band: number, value: EqBand) {
+  const s = ql.schema;
+  const eq = readEq((k) => ql.values.get(k), c, s);
+  const next = snapEq({ ...eq, bands: eq.bands.map((b, i) => (i === band ? value : b)) }, s);
+  for (const p of ["freq", "gain", "q"] as const) {
+    const e = { p, band };
+    const v = eqRaw(next, e, s);
+    for (const k of eqWriteKeys(c, e, s)) if (ql.set(k, v)) queueParam(k, v);
+  }
+}
+/** "Kerben entfernen": restores every band the automatic notched. */
+function clearNotches(): number {
+  let n = 0;
+  for (const [key, list] of Object.entries(auto.config.notches)) {
+    const [kind, i] = key.split(":");
+    const c = { kind: kind as Kind, index: Number(i) } as ChannelId;
+    for (const notch of list as Notch[]) { writeBand(c, notch.band, notch.orig); n++; }
+  }
+  auto.config.notches = {};
+  return n;
+}
+
+// ---------------------------------------------------------------- Dante audio
+
+const dante = new DanteAudio(ROOT);
+dante.music = () => auto.getStatus().music;
+dante.on("feedback", (h: { id: string; freq: number; level: number }) => {
+  console.log(`[Dante] Pfeifen bei ${hzText(h.freq)} (${h.id})`);
+  auto.audioFeedback(h.freq);
+});
+// Match every Dante channel to the console input it carries: compare level courses over 30 s.
+const MATCH_LEN = 300;
+const inputHistory = new Map<string, number[]>();
+let latestInputs = new Map<string, number>();
+setInterval(() => {
+  for (const [k, v] of latestInputs) {
+    const h = inputHistory.get(k) ?? [];
+    h.push(v - 126);
+    if (h.length > MATCH_LEN) h.shift();
+    inputHistory.set(k, h);
+  }
+  dante.sample(MATCH_LEN);
+}, 100);
+setInterval(() => {
+  for (const ch of dante.status.channels) {
+    const key = bestMatch(dante.history.get(ch.id) ?? [], inputHistory);
+    if (!key) continue;
+    const [kind, i] = key.split(":");
+    const c = { kind: kind as Kind, index: Number(i) } as ChannelId;
+    const n = link.values.get(channelParamKey(c, "name"));
+    dante.setMatch(ch.id, `${channelLabel(c)}${typeof n === "string" && n ? ` ${n}` : ""}`);
+  }
+}, 3000);
+dante.start();
+updateWatched(); // speaker mics: EQ re-read in the background (notches)
+
 auto.onActiveChange = (label) => { if (auto.enabled) console.log(`[Auto] aktives Mikro: ${label ?? "keins"}`); };
 auto.onEvent = (text) => console.log(`[Auto] ${text}`);
 // Learned values are saved at most every 5 s – a throttle, not a debounce: during a long speech
@@ -204,6 +277,7 @@ if (auto.config.running) {
 }
 ql.on("inmeters", (levels: Map<string, number>) => {
   auto.setMeters(levels);
+  latestInputs = levels;
   // RCP only meters MIX/MTX on CL/QL – input strips get the editor-protocol input meters (pre-EQ).
   const input: number[] = [], stereo: number[] = [];
   for (const [k, v] of levels) {
@@ -215,7 +289,7 @@ ql.on("inmeters", (levels: Map<string, number>) => {
   pushMeters("stereoInput", stereo);
 });
 
-const autoState = () => ({ t: "auto", config: auto.config, status: auto.getStatus() });
+const autoState = () => ({ t: "auto", config: auto.config, status: auto.getStatus(), dante: dante.status });
 let lastAuto = "";
 setInterval(() => {
   auto.tick();
@@ -237,6 +311,7 @@ function handleAuto(client: Client, m: any) {
     case "reference": error = auto.takeReference(); saveAuto(); break;
     case "forget": auto.config.learned = {}; auto.config.profiles = {}; saveAuto(); break;
     case "forgetLimits": auto.config.limits = {}; saveAuto(); break;
+    case "clearNotches": { const n = clearNotches(); console.log(`[Auto] ${n} EQ-Kerben entfernt`); saveAuto(); break; }
     case "config": {
       const c = m.config ?? {};
       const num = (v: unknown, lo: number, hi: number, d: number) => (typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
@@ -261,6 +336,8 @@ function handleAuto(client: Client, m: any) {
       auto.config.closeAfter = num(c.closeAfter, 5, 600, auto.config.closeAfter);
       if (c.sensitivity === "low" || c.sensitivity === "normal" || c.sensitivity === "high") auto.config.sensitivity = c.sensitivity;
       if (Array.isArray(c.musicIgnore)) auto.config.musicIgnore = inputs(c.musicIgnore);
+      if (typeof c.notchesEnabled === "boolean") auto.config.notchesEnabled = c.notchesEnabled;
+      updateWatched();
       saveAuto();
       break;
     }
@@ -425,4 +502,4 @@ server.on("error", (err: NodeJS.ErrnoException) => {
   process.exit(1);
 });
 
-process.on("SIGINT", () => { auto.stop(); ql.disconnect(); link.disconnect(); process.exit(0); });
+process.on("SIGINT", () => { auto.stop(); dante.stop(); ql.disconnect(); link.disconnect(); process.exit(0); });

@@ -45,6 +45,9 @@ export class QLLink extends EventEmitter {
   private lastWrite = new Map<Key, number>();
   private watched = new Map<string, ChannelId>();
   private watchedRacks = new Set<number>();
+  /** channels whose EQ is refreshed every few polls (Raum-Automatik notches need current EQ) */
+  private background = new Map<string, ChannelId>();
+  private pollCount = 0;
   private gotAnswer = false;
   private probeSink?: (elem: number, index: number, ch: number, value: number) => void;
 
@@ -72,6 +75,11 @@ export class QLLink extends EventEmitter {
   /** Channels whose EQ is open in some client – polled for changes made elsewhere. */
   setWatched(channels: ChannelId[]): void {
     this.watched = new Map(channels.map((c) => [`${c.kind}:${c.index}`, c]));
+  }
+
+  /** Channels whose EQ is re-read about every 10 s, even when nobody has them open. */
+  setBackground(channels: ChannelId[]): void {
+    this.background = new Map(channels.map((c) => [`${c.kind}:${c.index}`, c]));
   }
 
   /** Racks whose page is open in some client – polled like watched channels. */
@@ -173,6 +181,12 @@ export class QLLink extends EventEmitter {
     if (this.queue.length > 0) return;
     const reqs = [...this.watched.values()].flatMap((c) => this.requestsFor(c));
     for (const r of this.watchedRacks) reqs.push(...this.request(allRackKeys(r)));
+    if (++this.pollCount % 7 === 0) {
+      for (const [k, c] of this.background) {
+        if (this.watched.has(k) || !hasEQ(c.kind)) continue;
+        reqs.push(...this.request(eqParamsFor(c, this.schema).map((e) => eqKey(c, e, this.schema))));
+      }
+    }
     this.enqueue(reqs);
   }
 

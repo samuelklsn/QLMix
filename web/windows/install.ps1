@@ -74,6 +74,9 @@ if ($LASTEXITCODE -ne 0) { throw "npm install fehlgeschlagen" }
 & $npm run build
 if ($LASTEXITCODE -ne 0) { throw "npm run build fehlgeschlagen" }
 
+Write-Step "Lade ffmpeg für den Dante-Ton der Raum-Automatik"
+& (Join-Path $PSScriptRoot "ensure-ffmpeg.ps1") -Web $Web
+
 # ---------------------------------------------------------------- Konfiguration
 Write-Step "Konfiguration"
 $configFile = Join-Path $Web "config.json"

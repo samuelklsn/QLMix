@@ -42,8 +42,18 @@ export interface AutoConfigState {
   limits: Record<string, number>;
   sensitivity: "low" | "normal" | "high";
   musicIgnore: ChannelId[];
-  profiles: Record<string, { speech: number; sum: number | null }>;
+  profiles: Record<string, { speech: number; sum: number | null; noRoom?: boolean }>;
   running: boolean;
+  notchesEnabled: boolean;
+  notches: Record<string, { band: number; freq: number; gain: number }[]>;
+}
+
+export interface DanteState {
+  state: "off" | "no-ffmpeg" | "no-device" | "starting" | "running" | "error";
+  message: string;
+  receiving: boolean;
+  devices: string[];
+  channels: { id: string; device: string; ch: number; level: number | null; peak: number | null; match: string | null }[];
 }
 
 export interface AutoMic {
@@ -65,6 +75,7 @@ export interface AutoMic {
 
 export interface AutoState {
   config: AutoConfigState;
+  dante?: DanteState;
   status: {
     enabled: boolean;
     message: string;
@@ -285,18 +296,19 @@ class Store {
     for (const p of params) this.write(eqWriteKeys(c, p, s), eqRaw(snapped, p, s), immediate);
   }
 
-  autoAction(action: "start" | "stop" | "panic" | "reference" | "config" | "forget" | "forgetLimits", config?: Partial<AutoConfigState>): void {
+  autoAction(action: "start" | "stop" | "panic" | "reference" | "config" | "forget" | "forgetLimits" | "clearNotches", config?: Partial<AutoConfigState>): void {
     this.autoError = null;
     this.autoErrorAction = null;
     this.autoOk = null;
     // Show the change at once instead of waiting for the server (taps felt unresponsive).
-    if (this.auto && (action === "config" || action === "forget" || action === "forgetLimits")) {
+    if (this.auto && (action === "config" || action === "forget" || action === "forgetLimits" || action === "clearNotches")) {
       const same = (a: ChannelId) => (b: ChannelId) => a.kind === b.kind && a.index === b.index;
       const c = { ...this.auto.config, ...(config ?? {}) };
       if (config?.roomMics) c.channels = c.channels.filter((x) => !c.roomMics.some(same(x)));
       if (config?.channels) c.roomMics = c.roomMics.filter((x) => !c.channels.some(same(x)));
       if (action === "forget") { c.learned = {}; c.profiles = {}; }
       if (action === "forgetLimits") c.limits = {};
+      if (action === "clearNotches") c.notches = {};
       this.auto = { ...this.auto, config: c };
       this.autoHoldUntil = performance.now() + 800;
     }
