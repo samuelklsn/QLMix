@@ -54,3 +54,17 @@ test("DVS channel numbers come from the device name; a mix wins over its single 
   const inputs = new Map([["stereoInput:6", music], ["mix:8", music.map((v, i) => v - 6 + (i % 2))]]);
   assert.equal(bestMatch(music.map((v) => v - 10), inputs), "mix:8");
 });
+
+test("relevance is judged safely: sampler alone is ambiguous, speech through the mix decides", async () => {
+  const { classifyMatch } = await import("../server/dante-audio.ts");
+  const rel = (k: string) => k.startsWith("mix:") || k === "input:0";
+  // only the sampler plays: ST IN 7 and the mix fit equally → keep the unknown verdict
+  assert.deepEqual(classifyMatch([{ key: "stereoInput:6", corr: 0.95 }, { key: "mix:8", corr: 0.93 }], rel, null), { key: "stereoInput:6", relevant: null });
+  // somebody speaks: the mix and the pulpit mic fit, the sampler does not → relevant
+  assert.deepEqual(classifyMatch([{ key: "mix:8", corr: 0.9 }, { key: "input:0", corr: 0.88 }, { key: "stereoInput:6", corr: 0.2 }], rel, null), { key: "mix:8", relevant: true });
+  // later the sampler alone again: ambiguous → stays relevant
+  assert.deepEqual(classifyMatch([{ key: "stereoInput:6", corr: 0.95 }, { key: "mix:8", corr: 0.94 }], rel, true), { key: "mix:8", relevant: true });
+  // a channel that only ever carries the sampler, clearly → not relevant
+  assert.deepEqual(classifyMatch([{ key: "stereoInput:6", corr: 0.95 }, { key: "mix:8", corr: 0.5 }], rel, null), { key: "stereoInput:6", relevant: false });
+  assert.equal(classifyMatch([{ key: "mix:8", corr: 0.4 }], rel, null), null);
+});

@@ -99,3 +99,12 @@ test("low-frequency feedback (400 Hz) over a voice is found", () => {
 test("a steady tone (unamplified organ flute, test tone) never counts as feedback", () => {
   assert.equal(detect((t) => 0.3 * Math.sin(2 * Math.PI * 440 * t) + 0.01 * rnd(), 10), null);
 });
+
+test("a steady tone that wobbles ±2 dB (hum, sampler noise) is no feedback", () => {
+  // like DVS 5–8 at the church: a constant signal around −47 dB with a tonal component at 234 Hz
+  assert.equal(detect((t) => 0.004 * (1 + 0.25 * Math.sin(2 * Math.PI * 0.9 * t) + 0.1 * rnd()) * Math.sin(2 * Math.PI * 234 * t) + 0.0005 * rnd(), 30), null);
+});
+
+test("a tone that was steady for a while and only then wobbles up stays ignored", () => {
+  assert.equal(detect((t) => 0.004 * (t > 5 ? 1.5 : 1) * Math.sin(2 * Math.PI * 234 * t) + 0.0005 * rnd(), 10), null);
+});

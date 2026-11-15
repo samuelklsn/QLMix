@@ -121,7 +121,7 @@
         <span class="chip" class:good={store.connected}><span class="dot2"></span>Pult</span>
         <span class="chip" class:good={st.metersAvailable}><span class="dot2"></span>Pegel</span>
         <span class="chip" class:good={st.room.fresh}><span class="dot2"></span>Raum-Mikros</span>
-        {#if dante && dante.state !== "off" && dante.state !== "no-device"}<span class="chip" class:good={dante.receiving}><span class="dot2"></span>Dante</span>{/if}
+        {#if dante && dante.state !== "off" && dante.state !== "no-device"}<span class="chip" class:good={dante.useful}><span class="dot2"></span>Dante</span>{/if}
         {#if st.music}<span class="chip music"><Icon name="wave" size={13} />Musik</span>{/if}
       </div>
       {#if st.enabled}
@@ -351,7 +351,7 @@
     <section>
       <h3 class="step"><span class="stepn">6</span>Dante-Ton und Pfeifschutz</h3>
       <div class="group">
-        <p class="t-callout" class:warnmsg={dante && !dante.receiving}>{dante?.message || "Warte auf den Server …"}</p>
+        <p class="t-callout" class:warnmsg={dante && !dante.useful}>{dante?.message || "Warte auf den Server …"}</p>
         {#if danteLive.length}
           <div class="dchans">
             {#each danteLive as ch (ch.id)}

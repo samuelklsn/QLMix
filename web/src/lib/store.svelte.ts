@@ -21,6 +21,8 @@ export interface ServerInfo {
   meterStatus: "off" | "requested" | "active" | "unsupported";
   syncing: boolean;
   eqInputCount?: number;
+  /** QLMix version of the server */
+  version?: string;
   attempt?: number;
   delayMs?: number;
   pinRequired: boolean;
@@ -52,6 +54,7 @@ export interface DanteState {
   state: "off" | "no-ffmpeg" | "no-device" | "starting" | "running" | "error";
   message: string;
   receiving: boolean;
+  useful: boolean;
   devices: string[];
   channels: { id: string; device: string; ch: number; num: number; level: number | null; peak: number | null; match: string | null }[];
 }

@@ -74,12 +74,15 @@ const PRESENT_SHARE = 0.8;
 /** Not fading: the last frame may be at most this far below the track's maximum. */
 const FADE_DB = 4;
 /**
- * Feedback builds up: the peak must have grown at least this much since it appeared. A steady
- * tone (an unamplified organ heard by the room mics, a test tone) never qualifies.
+ * Feedback builds up: the peak must have grown at least this much since it appeared (mean of the
+ * first frames → mean of the latest frames – not just a random wobble). A tone that has not grown
+ * within STEADY_AFTER_MS is steady (organ heard by the room mics, hum, a test tone) and is ignored
+ * for as long as it lasts.
  */
-const RISE_DB = 2;
+const RISE_DB = 3;
 /** During music (instrument channels active) it must have grown more. */
-const MUSIC_RISE_DB = 4;
+const MUSIC_RISE_DB = 5;
+const STEADY_AFTER_MS = 2500;
 /**
  * The tone must carry a good part of the whole signal (feedback takes over; a single harmonic of
  * a voice or one note in a chord does not): peak level ≥ RMS level of the frame + this.
@@ -91,7 +94,8 @@ const REPORT_HOLD_MS = 3000;
 
 export interface FeedbackHit { freq: number; level: number }
 
-interface Track { bin: number; first: number; last: number; frames: number; seen: number; levels: number[] }
+interface Track { bin: number; first: number; last: number; frames: number; seen: number; levels: number[]; start: number[]; steady: boolean }
+const mean = (v: number[]) => v.reduce((a, b) => a + b, 0) / v.length;
 
 /** Finds feedback tones in a stream of spectra (one detector per audio channel). */
 export class FeedbackDetector {
@@ -104,8 +108,11 @@ export class FeedbackDetector {
     for (const tr of this.tracks) tr.frames++;
     for (const p of peaks) {
       const tr = this.tracks.find((x) => Math.abs(x.bin - p.bin) <= TRACK_BINS);
-      if (tr) { tr.bin = p.bin; tr.last = t; tr.seen++; tr.levels.push(p.level); if (tr.levels.length > 40) tr.levels.shift(); }
-      else this.tracks.push({ bin: p.bin, first: t, last: t, frames: 1, seen: 1, levels: [p.level] });
+      if (tr) {
+        tr.bin = p.bin; tr.last = t; tr.seen++;
+        tr.levels.push(p.level); if (tr.levels.length > 40) tr.levels.shift();
+        if (tr.start.length < 3) tr.start.push(p.level);
+      } else this.tracks.push({ bin: p.bin, first: t, last: t, frames: 1, seen: 1, levels: [p.level], start: [p.level], steady: false });
     }
     // Drop tracks that disappeared.
     this.tracks = this.tracks.filter((tr) => t - tr.last <= 250);
@@ -118,7 +125,12 @@ export class FeedbackDetector {
       if (lastLevel < max - FADE_DB) continue;
       if (lastLevel < rms + DOMINANCE_DB) continue;
       if (isHarmonic(spec, tr.bin, lastLevel)) continue;
-      if (lastLevel - Math.min(...tr.levels) < (music ? MUSIC_RISE_DB : RISE_DB)) continue;
+      const rise = mean(tr.levels.slice(-3)) - mean(tr.start);
+      if (rise < (music ? MUSIC_RISE_DB : RISE_DB)) {
+        if (t - tr.first > STEADY_AFTER_MS) tr.steady = true;
+        continue;
+      }
+      if (tr.steady) continue;
       if ([...this.reported.keys()].some((b) => Math.abs(b - tr.bin) <= TRACK_BINS * 2)) continue;
       if (!best || lastLevel > best.level) best = { freq: interpolatedFreq(spec, tr.bin), level: lastLevel };
     }

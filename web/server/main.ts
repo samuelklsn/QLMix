@@ -16,7 +16,7 @@ import { ConsoleLink } from "./console-link.ts";
 import { QLLink } from "./ql-link.ts";
 import { AutoLevel, type AutoConfig, DEFAULT_AUTO_CONFIG } from "./autolevel.ts";
 import { ensureTls } from "./tls.ts";
-import { DanteAudio, bestMatch } from "./dante-audio.ts";
+import { DanteAudio, classifyMatch, rankMatches } from "./dante-audio.ts";
 import { type Notch, planNotch, hzText } from "./notch.ts";
 import { CUSTOM_FADER_ELEMENTS } from "../shared/ql-params.ts";
 import {
@@ -174,7 +174,7 @@ function info() {
     eq = ql.available ? "QL" : null;
     eqStatus = ql.available ? "available" : ql.status === "failed" ? "unavailable" : "probing";
   }
-  return { t: "info", ...s, eq, eqStatus, eqInputCount: s.counts.input, pinRequired: config.pin !== "" };
+  return { t: "info", ...s, eq, eqStatus, eqInputCount: s.counts.input, pinRequired: config.pin !== "", version: VERSION };
 }
 
 function snapshot(c: Client) {
@@ -235,6 +235,9 @@ function clearNotches(): number {
 const dante = new DanteAudio(ROOT);
 dante.music = () => auto.getStatus().music;
 dante.on("feedback", (h: { id: string; freq: number; level: number }) => {
+  // Only channels that carry a mix, a room mic or a speaker mic can hear feedback in the room –
+  // a tone in anything else (sampler, playback, hum) must never touch the EQ.
+  if (!dante.isRelevant(h.id)) { console.log(`[Dante] Ton bei ${hzText(h.freq)} auf ${h.id} ignoriert (kein Mix/Raum-/Sprecher-Mikro)`); return; }
   console.log(`[Dante] Pfeifen bei ${hzText(h.freq)} (${h.id})`);
   auto.audioFeedback(h.freq);
 });
@@ -258,12 +261,14 @@ setInterval(() => {
 }, 100);
 setInterval(() => {
   for (const ch of dante.status.channels) {
-    const key = bestMatch(dante.history.get(ch.id) ?? [], inputHistory);
-    if (!key) continue;
-    const [kind, i] = key.split(":");
+    const mics = new Set([...auto.config.channels, ...auto.config.roomMics].map((x) => `${x.kind}:${x.index}`));
+    const isRelevant = (k: string) => k.startsWith("mix:") || k.startsWith("matrix:") || mics.has(k);
+    const m = classifyMatch(rankMatches(dante.history.get(ch.id) ?? [], inputHistory), isRelevant, dante.relevance(ch.id));
+    if (!m) continue;
+    const [kind, i] = m.key.split(":");
     const c = { kind: kind as Kind, index: Number(i) } as ChannelId;
     const n = link.values.get(channelParamKey(c, "name"));
-    dante.setMatch(ch.id, `${channelLabel(c)}${typeof n === "string" && n ? ` ${n}` : ""}`);
+    dante.setMatch(ch.id, `${channelLabel(c)}${typeof n === "string" && n ? ` ${n}` : ""}`, m.relevant === true);
   }
 }, 3000);
 dante.start();

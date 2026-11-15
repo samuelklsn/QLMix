@@ -177,8 +177,11 @@ euer VPN). Für alle Sprecher-Mikros gilt **eine** Ziel-Lautstärke im Raum.
 Läuft auf dem QLMix-PC die **Dante Virtual Soundcard** (Modus WDM), hört QLMix ihren Ton mit – ohne Einrichtung:
 * QLMix findet die Soundkarte selbst, liest alle Empfangskanäle und zeigt unter **6 Dante-Ton und Pfeifschutz**, ob Ton
   ankommt und welchen Pult-Kanal jeder Dante-Kanal trägt (QLMix vergleicht dazu die Pegel).
-* **Pfeifen wird am Ton erkannt:** ein einzelner, schmaler Ton, der stehen bleibt und lauter wird. Sprache, Gesang mit
-  Obertönen, ein gehaltener Orgelton oder Applaus lösen nichts aus.
+* **Pfeifen wird am Ton erkannt:** ein einzelner, schmaler Ton, der stehen bleibt und seit seinem Auftauchen deutlich
+  lauter wird. Sprache, Gesang mit Obertönen, ein gehaltener Orgelton, Brummen oder Applaus lösen nichts aus.
+* **Nur auf passenden Dante-Kanälen:** QLMix reagiert nur auf Dante-Kanäle, die nachweislich einen Mix, ein Raum-Mikro
+  oder ein Sprecher-Mikro tragen – nur dort ist Pfeifen zu hören. Liegt auf der Dante-Soundkarte nur z. B. ein
+  Zuspieler, steht das im Auto-Fenster, und der Pfeifschutz läuft über die Pult-Pegel.
 * Dann setzt QLMix im EQ des offenen Sprecher-Mikros eine **schmale Kerbe** (Q 8, −6 dB) genau auf die Pfeif-Frequenz.
   Pfeift es dort wieder, wird sie tiefer (bis −12 dB). Verwendet wird **nur ein freies EQ-Band** (0 dB) – dein EQ bleibt
   unangetastet. Ist kein Band frei, nimmt QLMix wie bisher den Fader zurück.

@@ -121,6 +121,8 @@
     <h3 class="section-title">Diagnose</h3>
     <div class="group">
       <dl class="diag">
+        <dt>QLMix-Version</dt>
+        <dd class="num">{info?.version ?? "–"}</dd>
         <dt>Meter</dt>
         <dd>{info?.meterStatus === "active" ? "Aktiv" : info?.meterStatus === "unsupported" ? "Nicht unterstützt" : "Warte …"}</dd>
         <dt>EQ</dt>
