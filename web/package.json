@@ -1,6 +1,6 @@
 {
   "name": "qlmix-web",
-  "version": "1.9.2",
+  "version": "1.9.3",
   "private": true,
   "description": "QLMix Web – Yamaha QL/CL Fernsteuerung im Browser (iPhone, iPad, Android, Mac)",
   "type": "module",

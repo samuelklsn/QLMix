@@ -154,8 +154,9 @@ euer VPN). Für alle Sprecher-Mikros gilt **eine** Ziel-Lautstärke im Raum.
   Stellung, danach bleibt er stehen. Nur wenn jemand länger deutlich (mehr als 3 dB) lauter oder leiser spricht,
   gleicht QLMix langsam an. Gemessen wird dafür am Sprecher-Mikro selbst; die Raum-Mikros dienen nur zum Einmessen
   auf die Ziel-Lautstärke und für den Pfeifschutz.
-* **Musik wird automatisch erkannt:** Haben andere Eingänge Signal (Klavier, Orgel, Band, Chor, Zuspieler), läuft
-  Musik. Dann öffnet QLMix nur ein Mikro, in das jemand direkt singt oder spricht, und regelt nichts nach. Ein Mikro,
+* **Musik wird automatisch erkannt:** Spielt ein anderer Eingang (Klavier, Orgel, Band, Chor, Zuspieler) mindestens die
+  Hälfte der Zeit durchgehend – ohne die Lücken, die Sprache hat –, läuft Musik. Ein Bühnenmikro, das nur den Prediger
+  über die Lautsprecher mithört, oder Gespräche an einem anderen Mikro zählen nicht. Dann öffnet QLMix nur ein Mikro, in das jemand direkt singt oder spricht, und regelt nichts nach. Ein Mikro,
   in das gesprochen wird, das aber kein Sprecher-Mikro ist, unter **5 Musik-Erkennung** ausnehmen.
 * **Fader runter bei Stille:** Spricht in ein Sprecher-Mikro 30 Sekunden lang niemand (einstellbar 15 s – 2 min),
   geht sein Fader ganz runter. ON bleibt, wie es ist (wegen der Monitormixe). Spricht wieder jemand hinein, springt

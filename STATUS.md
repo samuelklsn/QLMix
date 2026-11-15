@@ -1,6 +1,6 @@
 # STATUS – QLMix
 
-Stand: 2026-11-15 · Version **1.9.2** veröffentlicht (Release `v1.9.2`)
+Stand: 2026-11-15 · Version **1.9.3** veröffentlicht (Release `v1.9.3`)
 
 ## Fertig
 
@@ -104,6 +104,7 @@ Stand: 2026-11-15 · Version **1.9.2** veröffentlicht (Release `v1.9.2`)
 
 - 1.9.1 (veröffentlicht): Ergebnis vom Windows-PC (Screenshot 2026-11-15): Dante-Lesen klappt – die DVS erscheint als 8 Stereo-Geräte „DVS Receive 1-2 … 15-16“ (16 Kanäle), 4 Kanäle mit Ton, zugeordnet zu ST IN 7 „Sampler“. Fix: Anzeige „DVS 5“ statt „Kanal 1“, stille Kanäle zusammengefasst; Zuordnung prüft jetzt auch MIX/MTX (ein Mix gewinnt, wenn er so gut passt wie seine einzelne Quelle).
 - 1.9.2 (veröffentlicht): Screenshot nach 1.9.1: DVS 5–8 gleichmäßig um −47 dB, keine Zuordnung – und **Fehlalarm**: Kerbe 234 Hz −12 dB auf „Links“ (Samuel soll „Kerben entfernen“ drücken). Ursache: „gewachsen“ wurde als (letzter − kleinster Wert) ≥ 2 dB gemessen, Schwankung reichte. Fix: Anstieg = Mittel der letzten 3 − Mittel der ersten 3 Messungen ≥ 3 dB (Musik 5 dB), Töne ohne Anstieg nach 2,5 s gelten als stehend und werden ignoriert; Dante-Pfeifen wirkt nur noch auf Kanälen, die sicher einen Mix/Raum-/Sprecher-Mikro tragen (`classifyMatch`: alle gleich gut passenden Quellen müssen relevant sein). Versionsnummer in den Einstellungen.
+- 1.9.3 (veröffentlicht): Samuel: „erkennt Musik, obwohl keine gespielt oder gesungen wird“. Ursachen: Union über alle Kanäle (irgendein Kanal aktiv in 40 % von 3 s), Übersprechen (Bühnenmikros hören den Prediger über PA), Gespräche/Geräusche. Fix: pro Kanal ≥ 50 % von 5 s aktiv, Kontinuität ≥ 75 % der Frames innerhalb 10 dB vom lauten Pegel (Sprache hat Lücken), kein Musik-Kanal, wenn er mit dem sprechenden Mikro korreliert (≥ 0,5). Tests für Übersprechen/Gespräche schlagen mit altem Code fehl, mit neuem nicht.
 - Offen: Was liegt auf DVS 5–8? Wenn ein Mix (Livestream/Aufnahme) mit den Sprecher-Mikros → Pfeifschutz über Dante wirkt. Wenn nur der Sampler → wirkungslos; dann bräuchte es einen Raum-Mikro- oder Mix-Kanal auf einem freien DVS-Empfangskanal (Dante-Routing, nur mit Samuels OK).
 - Die Raum-Automatik ist in der **Testphase** (Badge „Test“ im UI). Der Nutzer testet sie im echten Raum.
 

@@ -37,6 +37,10 @@ function church(start: { faders?: Record<string, number>; on?: Record<string, bo
   let instrument = false;
   /** footsteps near a mic: one short knock every half second */
   let steps: string | null = null;
+  /** a stage mic (CH 6) overhears the speaker through the PA */
+  let crosstalk = false;
+  /** people chatting near CH 6 (speech-like, nobody at a speaker mic) */
+  let chatter = false;
   /** Runs `seconds` in 100 ms steps: meters (incl. room mic) every step, controller every 2nd. */
   const run = (seconds: number) => {
     for (let i = 0; i < seconds * 10; i++) {
@@ -49,7 +53,8 @@ function church(start: { faders?: Record<string, number>; on?: Record<string, bo
         const knock = steps === k && i % 5 === 0 ? noise + 30 : 0;
         meters.set(k, Math.max(base, knock, crowd ? noise + crowd + (i % 4) : 0));
       }
-      meters.set("input:5", instrument ? 92 + (i % 5) : 30 + (i % 2));
+      const chat = chatter && (i % 7 < 3 || i % 13 === 5);
+      meters.set("input:5", instrument ? 92 + (i % 5) : crosstalk && talker && word ? 90 + voice + (i % 3) : chat ? 86 + (i % 4) : 30 + (i % 2));
       const audible = talker !== null && word && on[talker] && faders[talker] > NEG_INF;
       const roomDb = feedback ? -10 + (i % 2) : audible ? voice + faders[talker!] / 100 - 30 + Math.sin(i)
         : crowd || instrument ? -35 + (i % 6) : -70 + Math.random();
@@ -65,6 +70,8 @@ function church(start: { faders?: Record<string, number>; on?: Record<string, bo
     setCrowd: (db: number) => { crowd = db; },
     setInstrument: (v: boolean) => { instrument = v; },
     setSteps: (k: string | null) => { steps = k; },
+    setCrosstalk: (v: boolean) => { crosstalk = v; },
+    setChatter: (v: boolean) => { chatter = v; },
     skip: (ms: number) => { now += ms; },
   };
 }
@@ -532,4 +539,33 @@ test("Dante feedback during a pause: only the mic spoken into last gets the notc
   sim.run(2);                                       // a pause – nobody is "the speaker" right now
   sim.al.audioFeedback(2537);
   assert.deepEqual(notched, ["input:0"]);
+});
+
+test("music detection: a stage mic overhearing the speaker is not music", () => {
+  const sim = church({ faders: { "input:0": 0 }, on: { "input:0": true } });
+  sim.al.start();
+  sim.run(25);
+  sim.setCrosstalk(true);
+  sim.talk("input:0");
+  for (let i = 0; i < 6; i++) { sim.run(5); assert.equal(sim.al.getStatus().music, false, `after ${(i + 1) * 5} s`); }
+});
+
+test("music detection: people chatting near another mic is not music", () => {
+  const sim = church();
+  sim.al.start();
+  sim.run(25);
+  sim.setChatter(true);
+  for (let i = 0; i < 6; i++) { sim.run(5); assert.equal(sim.al.getStatus().music, false, `after ${(i + 1) * 5} s`); }
+});
+
+test("music detection: the piano is still music while the pastor speaks over it", () => {
+  const sim = church({ faders: { "input:0": 0 }, on: { "input:0": true } });
+  sim.al.start();
+  sim.run(25);
+  sim.setCrosstalk(true);
+  sim.talk("input:0");
+  sim.setInstrument(true);
+  sim.run(6);
+  assert.equal(sim.al.getStatus().music, true);
+  assert.deepEqual(sim.al.getStatus().musicSources, ["Klavier"]);
 });

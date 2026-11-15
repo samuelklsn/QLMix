@@ -212,12 +212,21 @@ const EFFECT_MIN_DB = 1.5;
 const EFFECT_WAIT_MS = 3000;
 /** Without calibration: the room must be on target this long before the sum is stored. */
 const CAL_STABLE_MS = 3000;
-/** Music: another input this far above its floor and above MUSIC_MIN_RAW counts as playing. */
+/**
+ * Music: another input counts as playing when – on its own – it is clearly above its floor for a
+ * good share of the last seconds, sounds continuous (speech has gaps between syllables and words),
+ * and does not just follow the speaker's rhythm (a stage mic overhearing the pastor).
+ */
 const MUSIC_EXCESS = 15;
 const MUSIC_MIN_RAW = 76; // −50 dBFS
 const MUSIC_FLOOR_RISE_DB_S = 0.3;
-const MUSIC_WINDOW_MS = 3000;
-const MUSIC_SHARE = 0.4;
+const MUSIC_WINDOW_MS = 5000;
+const MUSIC_SHARE = 0.5;
+/** Share of frames within 10 dB of the channel's loud level – music ≥ this, speech below. */
+const MUSIC_CONTINUITY = 0.75;
+const MUSIC_CONTINUITY_DB = 10;
+/** Correlation with the speaking mic above which a channel only overhears the speaker. */
+const MUSIC_OVERHEAR_CORR = 0.5;
 const MUSIC_HOLD_MS = 4000;
 
 interface RoomSample { t: number; level: number }
@@ -253,6 +262,14 @@ function percentile(values: number[], p: number): number {
   return s[Math.min(s.length - 1, Math.max(0, Math.floor((s.length - 1) * p)))];
 }
 
+function pearson(a: number[], b: number[]): number {
+  const n = a.length;
+  const ma = a.reduce((s, x) => s + x, 0) / n, mb = b.reduce((s, x) => s + x, 0) / n;
+  let sab = 0, saa = 0, sbb = 0;
+  for (let i = 0; i < n; i++) { sab += (a[i] - ma) * (b[i] - mb); saa += (a[i] - ma) ** 2; sbb += (b[i] - mb) ** 2; }
+  return saa < 1e-9 || sbb < 1e-9 ? 0 : sab / Math.sqrt(saa * sbb);
+}
+
 function powerMean(dbs: number[]): number {
   return 10 * Math.log10(dbs.reduce((a, d) => a + Math.pow(10, d / 10), 0) / dbs.length);
 }
@@ -283,7 +300,8 @@ export class AutoLevel {
   // music detection
   private otherFloor = new Map<string, number>();
   private lastMeterAt = 0;
-  private musicFrames: { t: number; active: string[] }[] = [];
+  /** per meter frame: other inputs' levels (raw) and the loudest speaker mic (raw) */
+  private musicFrames: { t: number; levels: Map<string, number>; speech: number }[] = [];
   private musicUntil = 0;
   private wasMusic = false;
   /** last feedback handled from the Dante audio (the meter-based detection then stays quiet) */
@@ -336,14 +354,14 @@ export class AutoLevel {
     }
     // Music: any other input clearly above its own (slowly tracked) floor.
     const own = new Set([...this.config.channels, ...this.config.roomMics, ...this.config.musicIgnore].map(ck));
-    const active: string[] = [];
+    const others = new Map<string, number>();
     for (const [k, v] of levels) {
       if (own.has(k)) continue;
-      const f = Math.min(v, (this.otherFloor.get(k) ?? v) + MUSIC_FLOOR_RISE_DB_S * dt);
-      this.otherFloor.set(k, f);
-      if (v - f >= MUSIC_EXCESS && v >= MUSIC_MIN_RAW) active.push(k);
+      this.otherFloor.set(k, Math.min(v, (this.otherFloor.get(k) ?? v) + MUSIC_FLOOR_RISE_DB_S * dt));
+      others.set(k, v);
     }
-    this.musicFrames.push({ t, active });
+    const speech = Math.max(0, ...this.config.channels.map((c) => levels.get(ck(c)) ?? 0));
+    this.musicFrames.push({ t, levels: others, speech });
     while (this.musicFrames.length && this.musicFrames[0].t < t - MUSIC_WINDOW_MS) this.musicFrames.shift();
   }
 
@@ -698,18 +716,35 @@ export class AutoLevel {
     return powerMean(recent.map((s) => s.level));
   }
 
-  /** Music is playing when other inputs were active in a good share of the last seconds. */
+  /** Music is playing when at least one other input plays music on its own (see MUSIC_*). */
   private musicState(now: number, metersAvailable: boolean): { music: boolean; sources: string[] } {
     if (!metersAvailable) return { music: false, sources: [] };
     const frames = this.musicFrames.filter((f) => now - f.t <= MUSIC_WINDOW_MS);
-    const share = frames.length ? frames.filter((f) => f.active.length > 0).length / frames.length : 0;
-    if (frames.length >= 5 && share >= MUSIC_SHARE) this.musicUntil = now + MUSIC_HOLD_MS;
+    const playing = frames.length >= 10 ? this.musicSources(frames) : [];
+    if (playing.length) { this.musicUntil = now + MUSIC_HOLD_MS; this.lastMusicSources = playing; }
     const music = now < this.musicUntil;
-    if (!music) return { music, sources: [] };
-    const count = new Map<string, number>();
-    for (const f of frames) for (const k of f.active) count.set(k, (count.get(k) ?? 0) + 1);
-    const sources = [...count].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k]) => this.io.label(fromKey(k)));
-    return { music, sources };
+    return { music, sources: music ? this.lastMusicSources.slice(0, 3).map((k) => this.io.label(fromKey(k))) : [] };
+  }
+
+  private lastMusicSources: string[] = [];
+
+  /** Other inputs that play music in these frames, the most active first. */
+  private musicSources(frames: { levels: Map<string, number>; speech: number }[]): string[] {
+    const speech = frames.map((f) => f.speech);
+    // Somebody is talking into a speaker mic in these frames (for the overhearing check).
+    const speaking = this.config.channels.some((c) => this.inUse(c, this.meterLevel(c, this.io.now())));
+    const out: { k: string; share: number }[] = [];
+    for (const k of frames[frames.length - 1].levels.keys()) {
+      const floor = this.otherFloor.get(k) ?? 0;
+      const v = frames.map((f) => f.levels.get(k) ?? 0);
+      const share = v.filter((x) => x - floor >= MUSIC_EXCESS && x >= MUSIC_MIN_RAW).length / v.length;
+      if (share < MUSIC_SHARE) continue;
+      const loud = percentile(v, 0.9);
+      if (v.filter((x) => x >= loud - MUSIC_CONTINUITY_DB).length / v.length < MUSIC_CONTINUITY) continue;
+      if (speaking && pearson(v, speech) >= MUSIC_OVERHEAR_CORR) continue;
+      out.push({ k, share });
+    }
+    return out.sort((a, b) => b.share - a.share).map((x) => x.k);
   }
 
   private state(c: ChannelId): ChannelState {
